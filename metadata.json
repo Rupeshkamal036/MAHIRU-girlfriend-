@@ -1,0 +1,10 @@
+{
+  "name": "Mahiru Voice AI",
+  "description": "Cinematic AI girlfriend companion featuring 30 video animations, voice-controlled ambient room lighting, and Gemini 3.1 Live bidirectional voice.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
