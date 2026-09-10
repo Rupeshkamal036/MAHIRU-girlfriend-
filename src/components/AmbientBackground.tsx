@@ -6,22 +6,49 @@ export const AmbientBackground: React.FC = () => {
 
   return (
     <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 transition-all duration-700 ease-out">
-      {/* Primary Top Radial Glow */}
+      {/* 1. Full Left-to-Right Balanced Ambient Base Glow (Wide coverage) */}
       <div
-        className="absolute -top-[10%] left-1/2 -translate-x-1/2 w-[120vw] h-[80vh] rounded-full blur-[120px] transition-all duration-700 ease-out"
+        className="absolute inset-0 transition-all duration-700 ease-out pointer-events-none"
         style={{
-          background: `radial-gradient(ellipse at center, ${lightState.primaryGlow} 0%, transparent 70%)`,
-          opacity: lightState.brightness,
-          transform: `translate(-50%, 0) scale(${lightState.brightness > 1 ? 1.08 : 1})`,
+          background: `linear-gradient(90deg, ${lightState.primaryGlow} 0%, ${lightState.secondaryGlow} 50%, ${lightState.primaryGlow} 100%)`,
+          opacity: lightState.brightness * 0.45,
         }}
       />
 
-      {/* Secondary Center Ambient Aura behind character */}
+      {/* 2. Left-Side Ambient Glow */}
       <div
-        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[85vw] max-w-[580px] h-[55vh] rounded-full blur-[90px] transition-all duration-700 ease-out"
+        className="absolute top-1/3 -left-[15%] w-[65vw] max-w-[550px] h-[75vh] rounded-full blur-[110px] transition-all duration-700 ease-out pointer-events-none"
         style={{
-          background: `radial-gradient(circle at center, ${lightState.secondaryGlow} 0%, transparent 65%)`,
+          background: `radial-gradient(ellipse at center, ${lightState.primaryGlow} 0%, transparent 70%)`,
+          opacity: lightState.brightness * 0.85,
+        }}
+      />
+
+      {/* 3. Right-Side Ambient Glow */}
+      <div
+        className="absolute top-1/3 -right-[15%] w-[65vw] max-w-[550px] h-[75vh] rounded-full blur-[110px] transition-all duration-700 ease-out pointer-events-none"
+        style={{
+          background: `radial-gradient(ellipse at center, ${lightState.primaryGlow} 0%, transparent 70%)`,
+          opacity: lightState.brightness * 0.85,
+        }}
+      />
+
+      {/* 4. Center Ambient Aura behind character */}
+      <div
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[85vw] max-w-[650px] h-[65vh] rounded-full blur-[95px] transition-all duration-700 ease-out pointer-events-none"
+        style={{
+          background: `radial-gradient(circle at center, ${lightState.secondaryGlow} 0%, transparent 68%)`,
           opacity: lightState.brightness * 0.9,
+          transform: `translate(-50%, -50%) scale(${lightState.brightness > 1.1 ? 1.06 : 1})`,
+        }}
+      />
+
+      {/* 5. Primary Top Overhead Ambient Dome Glow */}
+      <div
+        className="absolute -top-[10%] left-1/2 -translate-x-1/2 w-[130vw] h-[75vh] rounded-full blur-[130px] transition-all duration-700 ease-out pointer-events-none"
+        style={{
+          background: `radial-gradient(ellipse at center, ${lightState.accentGlow} 0%, transparent 70%)`,
+          opacity: lightState.brightness * 0.75,
         }}
       />
 

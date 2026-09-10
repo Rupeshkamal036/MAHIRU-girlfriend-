@@ -293,6 +293,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     isOneShot: true,
     loop: false,
     priority: 6,
+    nextDefaultStateId: 29,
   },
   28: {
     id: 28,
@@ -303,6 +304,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     isOneShot: true,
     loop: false,
     priority: 6,
+    nextDefaultStateId: 29,
   },
   29: {
     id: 29,

@@ -5,6 +5,7 @@ import { SessionState, ReactionState, ToolCallData, PermissionErrorState } from 
 import { LiveSession } from './audio/LiveSession';
 import { useMahiruAnimation } from './hooks/useMahiruAnimation';
 import { AmbientLightingProvider, useAmbientLighting } from './context/AmbientLightingContext';
+import { matchVoiceMomentCommand } from './data/voiceCommandMatcher';
 
 // Components faithfully matching FIRST Screen Recording Blueprint
 import { AmbientBackground } from './components/AmbientBackground';
@@ -60,6 +61,7 @@ function MahiruCompanionApp() {
     triggerInterrupt,
     triggerEmotion,
     triggerMovement,
+    triggerDirectMoment,
     setConversationStyle,
   } = useMahiruAnimation({
     sessionState,
@@ -151,12 +153,12 @@ function MahiruCompanionApp() {
       setAiVolume(aVol);
     },
     onAmbientLightCommand: (color, mode) => {
-      if (mode === 'normal' || color === 'normal') {
+      if (mode === 'normal' || color === 'normal' || color === 'auto' || mode === 'auto') {
         resetToAuto();
-      } else if (mode === 'dim') {
-        setBrightness(0.4);
-      } else if (mode === 'bright') {
-        setBrightness(1.3);
+      } else if (mode === 'dim' || color === 'dim') {
+        setBrightness(0.45);
+      } else if (mode === 'bright' || color === 'bright') {
+        setBrightness(1.35);
       } else {
         setColor(color);
       }
@@ -233,33 +235,48 @@ function MahiruCompanionApp() {
       // 1. Check voice / light command
       handleVoiceCommand(text);
 
-      // 2. Check for exit or movement commands
-      const lower = text.toLowerCase().trim();
-      if (
-        lower === 'exit' ||
-        lower === 'leave' ||
-        lower === 'bye' ||
-        lower === 'goodbye' ||
-        lower.startsWith('exit ') ||
-        lower.includes('chali jao') ||
-        lower.includes('nikal')
-      ) {
-        triggerMovement('exit');
-      } else if (lower.includes('step right') || lower.includes('step aside right')) {
-        triggerMovement('step_aside_right');
-      } else if (lower.includes('step left') || lower.includes('step aside left')) {
-        triggerMovement('step_aside_left');
-      } else if (lower.includes('turn around') || lower.includes('turn back') || lower.includes('ghumo')) {
-        triggerMovement('turn_around');
-      } else if (lower.includes('walk') || lower.includes('walking') || lower.includes('chalo') || lower.includes('tahlo')) {
-        triggerMovement('walk');
-      } else if (lower.includes('look toward') || lower.includes('look there')) {
-        triggerMovement('look_toward');
+      // 2. Direct voice command matching for all 30 Mahiru video moments
+      const momentMatch = matchVoiceMomentCommand(text);
+      if (momentMatch) {
+        if (momentMatch.isExit) {
+          triggerMovement(momentMatch.movementAction || 'exit');
+        } else if (momentMatch.movementAction) {
+          triggerMovement(momentMatch.movementAction);
+        } else if (momentMatch.reactionType) {
+          triggerEmotion(momentMatch.reactionType);
+        } else {
+          triggerDirectMoment(momentMatch.animId);
+        }
+      } else {
+        // Fallback checks for simple movement or exit keywords
+        const lower = text.toLowerCase().trim();
+        if (
+          lower === 'exit' ||
+          lower === 'leave' ||
+          lower === 'bye' ||
+          lower === 'goodbye' ||
+          lower.startsWith('exit ') ||
+          lower.includes('chali jao') ||
+          lower.includes('nikal')
+        ) {
+          triggerMovement('exit');
+        } else if (lower.includes('step right') || lower.includes('step aside right')) {
+          triggerMovement('step_aside_right');
+        } else if (lower.includes('step left') || lower.includes('step aside left')) {
+          triggerMovement('step_aside_left');
+        } else if (lower.includes('turn around') || lower.includes('turn back') || lower.includes('ghumo')) {
+          triggerMovement('turn_around');
+        } else if (lower.includes('walk') || lower.includes('walking') || lower.includes('chalo') || lower.includes('tahlo')) {
+          triggerMovement('walk');
+        } else if (lower.includes('look toward') || lower.includes('look there')) {
+          triggerMovement('look_toward');
+        }
       }
 
       // 3. Conversation intent detection
-      const isGreeting = /\b(hello|hi|hey|heya|hlo|greetings|namaste|salaam|good morning|good afternoon|good evening|kaise ho|kaisa hai)\b/i.test(lower);
-      const isExplaining = /\b(explain|samjhao|batao kaise|bataiye kaise|how to|how do|how does|why is|why does|difference between|teach me|guide me|detail me|step by step)\b/i.test(lower);
+      const lowerText = text.toLowerCase().trim();
+      const isGreeting = /\b(hello|hi|hey|heya|hlo|greetings|namaste|salaam|good morning|good afternoon|good evening|kaise ho|kaisa hai)\b/i.test(lowerText);
+      const isExplaining = /\b(explain|samjhao|batao kaise|bataiye kaise|how to|how do|how does|why is|why does|difference between|teach me|guide me|detail me|step by step)\b/i.test(lowerText);
 
       if (isGreeting) {
         setConversationStyle('greeting');
@@ -274,7 +291,7 @@ function MahiruCompanionApp() {
         liveSessionRef.current.sendTextMessage(text);
       }
     },
-    [handleVoiceCommand, setConversationStyle, triggerMovement]
+    [handleVoiceCommand, setConversationStyle, triggerMovement, triggerEmotion, triggerDirectMoment]
   );
 
   // Passive speech recognition for real-time speech intent matching
@@ -296,10 +313,30 @@ function MahiruCompanionApp() {
       recognizer.onresult = (event: any) => {
         if (!isActive) return;
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0]?.transcript?.toLowerCase() || '';
-          if (/\b(hello|hi\b|hey\b|namaste|salaam|kaise ho|kaisa hai)\b/i.test(transcript)) {
+          const transcript = event.results[i][0]?.transcript || '';
+          if (!transcript.trim()) continue;
+
+          // Direct voice moment trigger on spoken speech
+          const match = matchVoiceMomentCommand(transcript);
+          if (match) {
+            if (match.isExit) {
+              triggerMovement(match.movementAction || 'exit');
+            } else if (match.movementAction) {
+              triggerMovement(match.movementAction);
+            } else if (match.reactionType) {
+              triggerEmotion(match.reactionType);
+            } else {
+              triggerDirectMoment(match.animId);
+            }
+          }
+
+          // Ambient lighting voice commands
+          handleVoiceCommand(transcript);
+
+          const lowerTranscript = transcript.toLowerCase();
+          if (/\b(hello|hi\b|hey\b|namaste|salaam|kaise ho|kaisa hai)\b/i.test(lowerTranscript)) {
             setConversationStyle('greeting');
-          } else if (/\b(explain|how to|why|samjhao|batao|guide)\b/i.test(transcript)) {
+          } else if (/\b(explain|how to|why|samjhao|batao|guide)\b/i.test(lowerTranscript)) {
             setConversationStyle('explaining');
           }
         }
@@ -325,7 +362,7 @@ function MahiruCompanionApp() {
         } catch {}
       }
     };
-  }, [sessionState, isMuted, isMicAvailable, setConversationStyle]);
+  }, [sessionState, isMuted, isMicAvailable, setConversationStyle, handleVoiceCommand, triggerMovement, triggerEmotion, triggerDirectMoment]);
 
   const handleHeartClick = useCallback(() => {
     triggerEmotion('love');

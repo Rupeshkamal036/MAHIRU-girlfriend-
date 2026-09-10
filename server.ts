@@ -294,7 +294,7 @@ You are the user's cute, sweet, and deeply caring AI girlfriend:
                     properties: {
                       color: {
                         type: Type.STRING,
-                        description: "Color name or hex, or 'blue', 'purple', 'pink', 'red', 'dim', 'bright', 'normal', 'warm'",
+                        description: "Color name or hex: 'blue', 'purple', 'pink', 'red', 'cyan', 'green', 'warm', 'cool', 'dim', 'bright', 'normal'",
                       },
                       mode: {
                         type: Type.STRING,

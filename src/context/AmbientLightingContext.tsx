@@ -71,21 +71,21 @@ export const AmbientLightingProvider: React.FC<{
 
     // 2. Based on current animation ID
     switch (activeAnimId) {
-      case 1: // Thinking: soft blue/purple, slightly dim
+      case 1: // Thinking: soft blue/purple, approximately 0.85 brightness
         return {
           mode: 'auto',
           colorName: 'thinking',
           primaryGlow: 'rgba(59, 130, 246, 0.25)',
           secondaryGlow: 'rgba(139, 92, 246, 0.22)',
           accentGlow: 'rgba(14, 165, 233, 0.18)',
-          brightness: 0.8,
+          brightness: 0.85,
           intensityClass: 'opacity-85',
           isBreathing: true,
         };
 
-      case 4: // #4 Greeting: friendly soft blue/purple glow
-      case 5: // #5 Talking: normal blue/purple glow
-      case 2: // #2 Talking & Explaining: normal blue/purple glow
+      case 4: // #4 Greeting: friendly soft blue/purple glow, approx 1.0
+      case 5: // #5 Talking: normal blue/purple glow, approx 1.0
+      case 2: // #2 Talking & Explaining: normal blue/purple glow, approx 1.0
       case 3: // #3 Asking question
         return {
           mode: 'auto',
@@ -93,73 +93,73 @@ export const AmbientLightingProvider: React.FC<{
           primaryGlow: 'rgba(147, 51, 234, 0.32)',
           secondaryGlow: 'rgba(59, 130, 246, 0.28)',
           accentGlow: 'rgba(236, 72, 153, 0.22)',
-          brightness: 1.1,
+          brightness: 1.0,
           intensityClass: 'opacity-100',
           isBreathing: true,
         };
 
-      case 7: // #7 Happy: soft warm/pink glow
+      case 7: // #7 Happy: warm/pink, approx 1.1 brightness
         return {
           mode: 'auto',
           colorName: 'happy',
           primaryGlow: 'rgba(236, 72, 153, 0.35)',
           secondaryGlow: 'rgba(244, 114, 182, 0.28)',
           accentGlow: 'rgba(251, 146, 60, 0.2)',
-          brightness: 1.15,
+          brightness: 1.1,
           intensityClass: 'opacity-100',
           isBreathing: true,
         };
 
-      case 18: // #18 Excited Greeting: brighter friendly/energetic glow
-      case 8: // #8 Excited: brighter energetic glow
+      case 18: // #18 Excited Greeting: bright energetic lighting, approx 1.25 brightness
+      case 8: // #8 Excited: brighter energetic lighting, approx 1.25 brightness
         return {
           mode: 'auto',
           colorName: 'excited',
           primaryGlow: 'rgba(244, 63, 94, 0.42)',
           secondaryGlow: 'rgba(168, 85, 247, 0.38)',
           accentGlow: 'rgba(251, 191, 36, 0.25)',
-          brightness: 1.3,
+          brightness: 1.25,
           intensityClass: 'opacity-100',
           isBreathing: true,
         };
 
-      case 20: // Shy / Embarrassed: soft pink, low intensity
+      case 20: // Shy / Embarrassed: soft pink, approx 0.9 brightness
         return {
           mode: 'auto',
           colorName: 'shy',
           primaryGlow: 'rgba(244, 114, 182, 0.24)',
           secondaryGlow: 'rgba(251, 113, 133, 0.2)',
           accentGlow: 'rgba(253, 164, 175, 0.15)',
-          brightness: 0.8,
-          intensityClass: 'opacity-80',
+          brightness: 0.9,
+          intensityClass: 'opacity-90',
           isBreathing: true,
         };
 
-      case 14: // Laughing: gentle brighter pulse
+      case 14: // Laughing: warm/brighter lighting, approx 1.15 brightness
         return {
           mode: 'auto',
           colorName: 'laughing',
           primaryGlow: 'rgba(236, 72, 153, 0.38)',
           secondaryGlow: 'rgba(245, 158, 11, 0.25)',
           accentGlow: 'rgba(168, 85, 247, 0.28)',
-          brightness: 1.2,
+          brightness: 1.15,
           intensityClass: 'opacity-100',
           isBreathing: true,
         };
 
-      case 10: // Surprised: quick but smooth brightness increase
+      case 10: // Surprised: brighter energetic lighting, approx 1.2 brightness
         return {
           mode: 'auto',
           colorName: 'surprised',
           primaryGlow: 'rgba(56, 189, 248, 0.4)',
           secondaryGlow: 'rgba(192, 132, 252, 0.35)',
           accentGlow: 'rgba(250, 204, 21, 0.2)',
-          brightness: 1.25,
+          brightness: 1.2,
           intensityClass: 'opacity-100',
           isBreathing: false,
         };
 
-      case 11: // Confused: cool blue subtle pulse
+      case 11: // Confused: cool blue, approx 0.9 brightness
         return {
           mode: 'auto',
           colorName: 'confused',
@@ -171,7 +171,7 @@ export const AmbientLightingProvider: React.FC<{
           isBreathing: true,
         };
 
-      case 12: // Relieved: glow gradually calms
+      case 12: // Relieved: soft calm lighting, approx 0.95 brightness
         return {
           mode: 'auto',
           colorName: 'relieved',
@@ -183,19 +183,19 @@ export const AmbientLightingProvider: React.FC<{
           isBreathing: true,
         };
 
-      case 13: // Thankful: warm gentle glow
+      case 13: // Thankful: warm soft lighting, approx 1.05 brightness
         return {
           mode: 'auto',
           colorName: 'thankful',
           primaryGlow: 'rgba(251, 146, 60, 0.32)',
           secondaryGlow: 'rgba(244, 63, 94, 0.28)',
           accentGlow: 'rgba(252, 211, 77, 0.2)',
-          brightness: 1.1,
+          brightness: 1.05,
           intensityClass: 'opacity-100',
           isBreathing: true,
         };
 
-      case 15: // Remembering: deep blue/purple
+      case 15: // Remembering: soft blue/purple, approx 0.95 brightness
         return {
           mode: 'auto',
           colorName: 'remembering',
@@ -207,7 +207,7 @@ export const AmbientLightingProvider: React.FC<{
           isBreathing: true,
         };
 
-      case 16: // Sleepy/Tired: very dim slow breathing glow
+      case 16: // Sleepy/Tired: very dim slow breathing glow, approx 0.55 brightness
         return {
           mode: 'auto',
           colorName: 'sleepy',
@@ -219,20 +219,20 @@ export const AmbientLightingProvider: React.FC<{
           isBreathing: true,
         };
 
-      case 17: // Looking Around: subtle responsive glow
-      case 30: // Look Toward Something
+      case 17: // Looking Around: calm blue/purple, approx 0.95 brightness
+      case 30: // Look Toward Something: approx 0.95 brightness
         return {
           mode: 'auto',
           colorName: 'looking-around',
           primaryGlow: 'rgba(59, 130, 246, 0.25)',
           secondaryGlow: 'rgba(168, 85, 247, 0.22)',
           accentGlow: 'rgba(6, 182, 212, 0.18)',
-          brightness: 1.0,
+          brightness: 0.95,
           intensityClass: 'opacity-95',
           isBreathing: true,
         };
 
-      case 19: // Sigh / Breath: soft exhale glow
+      case 19: // Sigh / Breath: soft blue/purple, approx 0.85 brightness
         return {
           mode: 'auto',
           colorName: 'sigh',
@@ -244,14 +244,14 @@ export const AmbientLightingProvider: React.FC<{
           isBreathing: true,
         };
 
-      case 6: // Listening: calm blue/purple
+      case 6: // Listening: calm blue/purple, approx 0.95 brightness
         return {
           mode: 'auto',
           colorName: 'listening',
           primaryGlow: 'rgba(59, 130, 246, 0.28)',
           secondaryGlow: 'rgba(147, 51, 234, 0.24)',
           accentGlow: 'rgba(6, 182, 212, 0.2)',
-          brightness: 1.0,
+          brightness: 0.95,
           intensityClass: 'opacity-100',
           isBreathing: true,
         };
@@ -422,7 +422,7 @@ export const AmbientLightingProvider: React.FC<{
         return true;
       }
 
-      // Bright commands: "light bright kar do", "bright light", "tez light", "brightness badha do", "badhao"
+      // Bright commands: "light bright kar do", "bright light", "tez light", "brightness badha do", "badhao", "badha"
       if (
         lower.includes('bright kar do') ||
         lower.includes('light bright') ||
@@ -431,7 +431,9 @@ export const AmbientLightingProvider: React.FC<{
         lower.includes('brightness badha') ||
         lower.includes('brightness badhao') ||
         lower.includes('make it bright') ||
-        lower.includes('increase brightness')
+        lower.includes('increase brightness') ||
+        lower.includes('zyada light') ||
+        lower.includes('light tez')
       ) {
         setManualState((prev) => ({ ...prev, isManual: true, brightness: 1.35 }));
         return true;
@@ -471,6 +473,11 @@ export const AmbientLightingProvider: React.FC<{
       // "cyan light kar do"
       if (lower.includes('cyan') || lower.includes('aqua')) {
         setColor('cyan');
+        return true;
+      }
+      // "green light kar do", "hara light", "green background"
+      if (lower.includes('green') || lower.includes('hara') || lower.includes('hari')) {
+        setColor('green');
         return true;
       }
 

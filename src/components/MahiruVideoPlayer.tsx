@@ -24,6 +24,13 @@ function getPredictivePreloadId(currentId: number, sessionState: SessionState): 
     // If speaking, likely next return state is #6 Listening
     return 6;
   }
+  // If exit video is playing, next video is deterministically the opposite-side entry
+  if (currentId === 24) {
+    return 22; // #24 Right Exit -> #22 Left Enter
+  }
+  if (currentId === 25) {
+    return 23; // #25 Left Exit -> #23 Right Enter
+  }
   // If one-shot action (#4 greeting, #3 asking, etc.)
   const meta = MAHIRU_VIDEOS[currentId];
   if (meta?.nextDefaultStateId) {

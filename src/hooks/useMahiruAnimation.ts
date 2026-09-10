@@ -29,6 +29,7 @@ export function useMahiruAnimation({
   // Behavioral state locks (NO hard-coded timers; resolved strictly via onEnded events)
   const isEntryActiveRef = useRef<boolean>(false);
   const isExitActiveRef = useRef<boolean>(false);
+  const isExitReentryRef = useRef<boolean>(false); // Tracks if entry (#22/#23) is returning from an exit sequence
   const isMovementActiveRef = useRef<boolean>(false);
   const isOneShotActiveRef = useRef<boolean>(false);
 
@@ -101,6 +102,7 @@ export function useMahiruAnimation({
     if (sessionState === 'disconnected') {
       isEntryActiveRef.current = false;
       isExitActiveRef.current = false;
+      isExitReentryRef.current = false;
       isMovementActiveRef.current = false;
       isOneShotActiveRef.current = false;
       wasUserSpeakingRef.current = false;
@@ -216,6 +218,16 @@ export function useMahiruAnimation({
       isEntryActiveRef.current = false;
       isOneShotActiveRef.current = false;
 
+      // STEP 1: If this entry was triggered as part of an exit -> re-entry sequence,
+      // it MUST settle into #29 Idle / Waiting.
+      if (isExitReentryRef.current) {
+        isExitReentryRef.current = false;
+        isExitActiveRef.current = false;
+        changeAnimation(29, false); // Settle into #29 Idle / Waiting
+        return;
+      }
+
+      // Normal Power-On Entry completion:
       // Mahiru has reached the center reference position and remains conversation-ready.
       // - Do NOT automatically play #29.
       // - Do NOT automatically play #4 Greeting.
@@ -251,11 +263,20 @@ export function useMahiruAnimation({
       return;
     }
 
-    // 3. EXIT ANIMATIONS (#24 or #25) COMPLETED NATURALLY
+    // 3. EXIT ANIMATIONS (#24 Right Exit or #25 Left Exit) COMPLETED NATURALLY
     if (currentId === 24 || currentId === 25) {
+      // Complete exit playback naturally via onEnded.
+      // Deterministic opposite-side re-entry flow:
+      // #24 Right Exit ALWAYS pairs with #22 Left Enter
+      // #25 Left Exit ALWAYS pairs with #23 Right Enter
+      const oppositeEnterId = currentId === 24 ? 22 : 23;
       isExitActiveRef.current = true;
-      isOneShotActiveRef.current = false;
-      // Exit complete naturally. No random exit animation afterward.
+      isExitReentryRef.current = true;
+      isEntryActiveRef.current = true;
+      isOneShotActiveRef.current = true;
+
+      // Trigger the opposite-side entry animation as a one-shot movement action
+      changeAnimation(oppositeEnterId, true);
       return;
     }
 
@@ -263,16 +284,12 @@ export function useMahiruAnimation({
     if (currentId === 27 || currentId === 28) {
       isMovementActiveRef.current = false;
       isOneShotActiveRef.current = false;
-      // After movement: Mahiru must remain visible. This is NOT an exit. Do not remove her from scene.
-      // If AI is actively speaking, seamlessly transition to #5 Talking or #2 Explaining
-      if (sessionState === 'speaking' || isAiSpeakingRef.current) {
-        const mode = conversationModeRef.current;
-        const returnAnim = mode === 'explaining' ? 2 : 5;
-        changeAnimation(returnAnim, false);
-      } else {
-        // Conversation-ready state
-        changeAnimation(6, false);
-      }
+      // After side-step movement completes naturally via onEnded:
+      // Mahiru remains completely visible inside the locked frame.
+      // Final state settles strictly into #29 Idle/Waiting.
+      // Does NOT trigger #24 Right Exit, #25 Left Exit, #22 Left Enter, #23 Right Enter,
+      // nor #1 Thinking, #4 Greeting, #5 Talking, #6 Listening, or any emotion video.
+      changeAnimation(29, false);
       return;
     }
 
@@ -498,8 +515,10 @@ export function useMahiruAnimation({
         act.includes('exit_right') ||
         (act.includes('exit') && act.includes('right'))
       ) {
+        if (isExitActiveRef.current) return;
         animId = 24; // #24 Right exit
         isExitActiveRef.current = true;
+        isExitReentryRef.current = false;
       }
       // Genuine Exit Left
       else if (
@@ -507,8 +526,10 @@ export function useMahiruAnimation({
         act.includes('exit_left') ||
         (act.includes('exit') && act.includes('left'))
       ) {
+        if (isExitActiveRef.current) return;
         animId = 25; // #25 Left exit
         isExitActiveRef.current = true;
+        isExitReentryRef.current = false;
       }
       // Genuine Exit (direction unspecified): randomly choose between ONLY #24 Right Exit and #25 Left Exit
       else if (
@@ -517,8 +538,22 @@ export function useMahiruAnimation({
         act.includes('chali jao') ||
         act.includes('nikal')
       ) {
+        if (isExitActiveRef.current) return;
         animId = Math.random() < 0.5 ? 24 : 25;
         isExitActiveRef.current = true;
+        isExitReentryRef.current = false;
+      }
+      // #23 Right Enter (direct entry from right)
+      else if (act.includes('right_enter') || act.includes('enter_right')) {
+        animId = 23;
+        isEntryActiveRef.current = true;
+        isOneShotActiveRef.current = true;
+      }
+      // #22 Left Enter (direct entry from left)
+      else if (act.includes('left_enter') || act.includes('enter_left')) {
+        animId = 22;
+        isEntryActiveRef.current = true;
+        isOneShotActiveRef.current = true;
       }
       // #30 Look Toward Something (only on real event/reason)
       else if (act.includes('look_toward') || act.includes('toward')) {
@@ -551,14 +586,70 @@ export function useMahiruAnimation({
    */
   const triggerExit = useCallback(
     (direction?: 'left' | 'right') => {
-      if (!isPowerOnRef.current || isEntryActiveRef.current) return;
+      if (!isPowerOnRef.current || isEntryActiveRef.current || isExitActiveRef.current) return;
       let exitAnim = Math.random() < 0.5 ? 24 : 25;
       if (direction === 'right') exitAnim = 24;
       if (direction === 'left') exitAnim = 25;
       isExitActiveRef.current = true;
+      isExitReentryRef.current = false;
       changeAnimation(exitAnim, true);
     },
     [changeAnimation]
+  );
+
+  /**
+   * Explicit direct moment trigger for any of the 30 Mahiru video moments (#1–#30).
+   * Prioritizes explicit requested moments over background/random animations.
+   */
+  const triggerDirectMoment = useCallback(
+    (momentId: number) => {
+      if (!isPowerOnRef.current) return;
+      if (momentId < 1 || momentId > 30) return;
+
+      // Handle exits specifically to ensure proper exit flags and opposite-side entry flow
+      if (momentId === 24) {
+        triggerExit('right');
+        return;
+      }
+      if (momentId === 25) {
+        triggerExit('left');
+        return;
+      }
+
+      // Handle side-steps (#27 and #28)
+      if (momentId === 27) {
+        triggerMovement('step_aside_right');
+        return;
+      }
+      if (momentId === 28) {
+        triggerMovement('step_aside_left');
+        return;
+      }
+
+      // Handle direct entries (#22 and #23)
+      if (momentId === 22) {
+        triggerMovement('left_enter');
+        return;
+      }
+      if (momentId === 23) {
+        triggerMovement('right_enter');
+        return;
+      }
+
+      // Reset active one-shot / movement flags
+      isExitActiveRef.current = false;
+      isExitReentryRef.current = false;
+      isEntryActiveRef.current = false;
+      isMovementActiveRef.current = false;
+
+      const meta = MAHIRU_VIDEOS[momentId];
+      const isOneShot = meta ? meta.isOneShot : false;
+      isOneShotActiveRef.current = isOneShot;
+
+      // Direct change animation with explicit moment priority
+      changeAnimation(momentId, isOneShot);
+    },
+    [changeAnimation, triggerExit, triggerMovement]
   );
 
   return {
@@ -572,6 +663,7 @@ export function useMahiruAnimation({
     triggerEmotion,
     triggerMovement,
     triggerExit,
+    triggerDirectMoment,
     setConversationStyle,
   };
 }
