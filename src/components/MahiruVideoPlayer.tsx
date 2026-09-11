@@ -103,8 +103,17 @@ export const MahiruVideoPlayer: React.FC<MahiruVideoPlayerProps> = ({
     // 1. NO UNNECESSARY RESTARTS: If active video is already displaying this exact URL, keep playing seamlessly
     if (currentUrlRef.current === nextUrl) {
       const activeEl = activeSlotRef.current === 'A' ? videoRefA.current : videoRefB.current;
-      if (activeEl && activeEl.paused) {
-        activeEl.play().catch(() => {});
+      if (activeEl) {
+        const targetStartTime = currentMeta.actionStart && currentMeta.actionStart > 0 ? currentMeta.actionStart : 0;
+        // If ended or stuck at EOF, rewind to starting position before playing
+        if (activeEl.ended || (activeEl.duration && activeEl.currentTime >= activeEl.duration - 0.1)) {
+          try {
+            activeEl.currentTime = targetStartTime;
+          } catch {}
+        }
+        if (activeEl.paused || activeEl.ended) {
+          activeEl.play().catch(() => {});
+        }
       }
       return;
     }
@@ -127,6 +136,9 @@ export const MahiruVideoPlayer: React.FC<MahiruVideoPlayerProps> = ({
 
     if (!targetEl) return;
 
+    // Target action start timestamp (in seconds)
+    const targetActionStart = currentMeta.actionStart && currentMeta.actionStart > 0 ? currentMeta.actionStart : 0;
+
     let switched = false;
     let cleanupListeners: (() => void) | null = null;
 
@@ -140,20 +152,40 @@ export const MahiruVideoPlayer: React.FC<MahiruVideoPlayerProps> = ({
         cleanupListeners = null;
       }
 
+      // Ensure target element is positioned at targetActionStart (or reset to 0.0) before or as playback begins
+      try {
+        if (Math.abs(targetEl.currentTime - targetActionStart) > 0.05) {
+          targetEl.currentTime = targetActionStart;
+        }
+      } catch {
+        // In case of media seek restrictions
+      }
+
+      // Synchronize loop property on element before playback begins
+      targetEl.loop = shouldLoop;
+
       targetEl
         .play()
         .then(() => {
           if (transitionRequestIdRef.current !== requestId) return;
           setActiveSlot(targetSlot);
 
-          // Gracefully pause and reset the previous buffer after crossfade completes (320ms)
-          setTimeout(() => {
-            if (transitionRequestIdRef.current === requestId && activeSlotRef.current === targetSlot) {
-              if (previousEl) {
-                previousEl.pause();
+          // Listen for targetEl actually rendering frames/playing before scheduling previousEl pause
+          const onPlayingOrRendered = () => {
+            setTimeout(() => {
+              if (transitionRequestIdRef.current === requestId && activeSlotRef.current === targetSlot) {
+                if (previousEl) {
+                  previousEl.pause();
+                }
               }
-            }
-          }, 320);
+            }, 320);
+          };
+
+          if (!targetEl.paused && targetEl.readyState >= 3) {
+            onPlayingOrRendered();
+          } else {
+            targetEl.addEventListener('playing', onPlayingOrRendered, { once: true });
+          }
         })
         .catch((err: any) => {
           if (err?.name === 'AbortError' || err?.name === 'NotAllowedError') return;
@@ -179,30 +211,72 @@ export const MahiruVideoPlayer: React.FC<MahiruVideoPlayerProps> = ({
       }
     };
 
-    // Attach listeners with clean teardown
-    const onLoadedData = () => performCrossfade();
-    const onCanPlay = () => performCrossfade();
+    // Fast-path for seeking when metadata is loaded
+    const onLoadedMetadata = () => {
+      if (targetActionStart > 0) {
+        try {
+          if (Math.abs(targetEl.currentTime - targetActionStart) > 0.05) {
+            targetEl.currentTime = targetActionStart;
+          }
+        } catch {}
+      }
+    };
 
+    // Attach listeners with clean teardown
+    const onLoadedData = () => {
+      // If an actionStart seek is needed and element is still at 0, seek first and await seeked
+      if (targetActionStart > 0 && targetEl.currentTime < targetActionStart - 0.05) {
+        try {
+          targetEl.currentTime = targetActionStart;
+          targetEl.addEventListener('seeked', () => performCrossfade(), { once: true });
+          return;
+        } catch {}
+      }
+      performCrossfade();
+    };
+
+    const onCanPlay = () => {
+      if (targetActionStart > 0 && targetEl.currentTime < targetActionStart - 0.05) {
+        try {
+          targetEl.currentTime = targetActionStart;
+          targetEl.addEventListener('seeked', () => performCrossfade(), { once: true });
+          return;
+        } catch {}
+      }
+      performCrossfade();
+    };
+
+    targetEl.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
     targetEl.addEventListener('loadeddata', onLoadedData, { once: true });
     targetEl.addEventListener('canplay', onCanPlay, { once: true });
     targetEl.addEventListener('error', handleTargetError, { once: true });
 
     cleanupListeners = () => {
+      targetEl.removeEventListener('loadedmetadata', onLoadedMetadata);
       targetEl.removeEventListener('loadeddata', onLoadedData);
       targetEl.removeEventListener('canplay', onCanPlay);
       targetEl.removeEventListener('error', handleTargetError);
     };
 
-    // If target element already has buffered data ready to play, crossfade immediately
-    if (targetEl.readyState >= 2) {
-      performCrossfade();
+    // If target element already has buffered data ready to play, crossfade safely
+    if (targetEl.readyState >= 3) {
+      if (Math.abs(targetEl.currentTime - targetActionStart) > 0.05) {
+        try {
+          targetEl.currentTime = targetActionStart;
+          targetEl.addEventListener('seeked', () => performCrossfade(), { once: true });
+        } catch {
+          performCrossfade();
+        }
+      } else {
+        performCrossfade();
+      }
     } else {
-      // Safety timeout (max 350ms) to ensure transition never permanently hangs
+      // Safety timeout (max 400ms) to ensure transition never permanently hangs
       const safetyTimer = setTimeout(() => {
         if (!switched && transitionRequestIdRef.current === requestId) {
           performCrossfade();
         }
-      }, 350);
+      }, 400);
 
       const origCleanup = cleanupListeners;
       cleanupListeners = () => {
@@ -218,25 +292,58 @@ export const MahiruVideoPlayer: React.FC<MahiruVideoPlayerProps> = ({
     };
   }, [currentAnimId, availableFiles]);
 
-  // Initial playback of slot A
+  // Initial playback of slot A with actionStart alignment
   useEffect(() => {
     const elA = videoRefA.current;
-    if (elA && elA.paused) {
-      elA.play().catch(() => {});
+    if (elA) {
+      const initMeta = MAHIRU_VIDEOS[currentAnimId] || MAHIRU_VIDEOS[29];
+      const start = initMeta?.actionStart && initMeta.actionStart > 0 ? initMeta.actionStart : 0;
+      if (start > 0) {
+        try {
+          elA.currentTime = start;
+        } catch {}
+      }
+      if (elA.paused) {
+        elA.play().catch(() => {});
+      }
     }
   }, []);
 
   const handleEndedSlotA = useCallback(() => {
-    if (activeSlotRef.current === 'A' && onVideoEnded) {
-      onVideoEnded();
+    if (activeSlotRef.current === 'A') {
+      const activeEl = videoRefA.current;
+      const meta = MAHIRU_VIDEOS[currentAnimId] || MAHIRU_VIDEOS[29];
+      const isLooping = Boolean(meta.loop && !meta.isOneShot);
+      if (isLooping && activeEl) {
+        const start = meta.actionStart && meta.actionStart > 0 ? meta.actionStart : 0;
+        try {
+          activeEl.currentTime = start;
+          activeEl.play().catch(() => {});
+        } catch {}
+      }
+      if (onVideoEnded) {
+        onVideoEnded();
+      }
     }
-  }, [onVideoEnded]);
+  }, [currentAnimId, onVideoEnded]);
 
   const handleEndedSlotB = useCallback(() => {
-    if (activeSlotRef.current === 'B' && onVideoEnded) {
-      onVideoEnded();
+    if (activeSlotRef.current === 'B') {
+      const activeEl = videoRefB.current;
+      const meta = MAHIRU_VIDEOS[currentAnimId] || MAHIRU_VIDEOS[29];
+      const isLooping = Boolean(meta.loop && !meta.isOneShot);
+      if (isLooping && activeEl) {
+        const start = meta.actionStart && meta.actionStart > 0 ? meta.actionStart : 0;
+        try {
+          activeEl.currentTime = start;
+          activeEl.play().catch(() => {});
+        } catch {}
+      }
+      if (onVideoEnded) {
+        onVideoEnded();
+      }
     }
-  }, [onVideoEnded]);
+  }, [currentAnimId, onVideoEnded]);
 
   return (
     <div
@@ -253,7 +360,7 @@ export const MahiruVideoPlayer: React.FC<MahiruVideoPlayerProps> = ({
         muted
         autoPlay
         controls={false}
-        loop={activeSlot === 'A' && shouldLoop}
+        loop={shouldLoop}
         onEnded={handleEndedSlotA}
         className={`absolute inset-0 w-full h-full object-contain scale-[1.055] origin-[50%_38%] pointer-events-none transition-opacity duration-300 ease-in-out ${
           activeSlot === 'A' ? 'opacity-100 z-10' : 'opacity-0 z-0'
@@ -268,7 +375,7 @@ export const MahiruVideoPlayer: React.FC<MahiruVideoPlayerProps> = ({
         muted
         autoPlay
         controls={false}
-        loop={activeSlot === 'B' && shouldLoop}
+        loop={shouldLoop}
         onEnded={handleEndedSlotB}
         className={`absolute inset-0 w-full h-full object-contain scale-[1.055] origin-[50%_38%] pointer-events-none transition-opacity duration-300 ease-in-out ${
           activeSlot === 'B' ? 'opacity-100 z-10' : 'opacity-0 z-0'

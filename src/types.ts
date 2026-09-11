@@ -70,6 +70,7 @@ export interface MahiruVideoMeta {
   loop: boolean;
   priority: number;
   nextDefaultStateId?: number;
+  actionStart?: number; // Exact timestamp (in seconds) where the actual action/movement starts
 }
 
 export type AmbientLightingMode = 'auto' | 'manual';

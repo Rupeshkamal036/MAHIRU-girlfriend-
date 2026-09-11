@@ -63,10 +63,11 @@ export function useMahiruAnimation({
    * Safe changeAnimation function.
    * Modifies the current animation state without arbitrary fixed timers.
    * One-shot actions are allowed to complete naturally and report via handleVideoEnded.
+   * Supports optional force parameter to re-affirm/recover playback when ID matches.
    */
   const changeAnimation = useCallback(
-    (id: number, isOneShot: boolean = false) => {
-      if (currentAnimIdRef.current === id && !isOneShot) {
+    (id: number, isOneShot: boolean = false, force: boolean = false) => {
+      if (currentAnimIdRef.current === id && !isOneShot && !force) {
         return;
       }
 
@@ -110,7 +111,7 @@ export function useMahiruAnimation({
       conversationModeRef.current = 'talking';
 
       // Default standby state #29 Idle / Waiting
-      changeAnimation(29, false);
+      changeAnimation(29, false, true);
       return;
     }
 
@@ -223,7 +224,7 @@ export function useMahiruAnimation({
       if (isExitReentryRef.current) {
         isExitReentryRef.current = false;
         isExitActiveRef.current = false;
-        changeAnimation(29, false); // Settle into #29 Idle / Waiting
+        changeAnimation(29, false, true); // Settle into #29 Idle / Waiting
         return;
       }
 
@@ -246,7 +247,10 @@ export function useMahiruAnimation({
       else if (wasUserSpeakingRef.current) {
         changeAnimation(6, false);
       }
-      // Otherwise remain conversation-ready on current frame without forcing unrequested animations
+      // Otherwise settle smoothly into continuous active #29 Idle / Waiting
+      else {
+        changeAnimation(29, false, true);
+      }
       return;
     }
 
@@ -289,7 +293,7 @@ export function useMahiruAnimation({
       // Final state settles strictly into #29 Idle/Waiting.
       // Does NOT trigger #24 Right Exit, #25 Left Exit, #22 Left Enter, #23 Right Enter,
       // nor #1 Thinking, #4 Greeting, #5 Talking, #6 Listening, or any emotion video.
-      changeAnimation(29, false);
+      changeAnimation(29, false, true);
       return;
     }
 
@@ -299,7 +303,7 @@ export function useMahiruAnimation({
       isOneShotActiveRef.current = false;
       // One-shot action completes and returns to appropriate state
       if (!isPowerOnRef.current) {
-        changeAnimation(29, false);
+        changeAnimation(29, false, true);
       } else if (sessionState === 'speaking' || isAiSpeakingRef.current) {
         changeAnimation(5, false);
       } else {
@@ -314,7 +318,7 @@ export function useMahiruAnimation({
       isOneShotActiveRef.current = false;
       isMovementActiveRef.current = false;
       if (!isPowerOnRef.current) {
-        changeAnimation(29, false);
+        changeAnimation(29, false, true);
       } else if (sessionState === 'speaking' || isAiSpeakingRef.current) {
         // Return to active conversation state: #2 if explaining, #5 if talking
         const mode = conversationModeRef.current;
@@ -324,6 +328,14 @@ export function useMahiruAnimation({
         // Response complete: return to waiting/conversation-ready state #6 Listening
         changeAnimation(6, false);
       }
+      return;
+    }
+
+    // 7. #29 IDLE / WAITING OR LOOPING ANIMATION REACHED END (Media ended event fallback)
+    // If browser fired 'ended' on looping idle #29, re-affirm continuous playback immediately.
+    if (currentId === 29 || currentMeta?.loop) {
+      changeAnimation(currentId, false, true);
+      return;
     }
   }, [changeAnimation, sessionState]);
 

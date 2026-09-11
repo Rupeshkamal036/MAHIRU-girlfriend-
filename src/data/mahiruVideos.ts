@@ -17,6 +17,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     isOneShot: false,
     loop: true,
     priority: 5,
+    actionStart: 0.21,
   },
   2: {
     id: 2,
@@ -27,6 +28,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     isOneShot: false,
     loop: true,
     priority: 6,
+    actionStart: 0.21,
   },
   3: {
     id: 3,
@@ -38,6 +40,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     loop: false,
     priority: 6,
     nextDefaultStateId: 5,
+    actionStart: 0.25,
   },
   4: {
     id: 4,
@@ -49,6 +52,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     loop: false,
     priority: 8,
     nextDefaultStateId: 6, // Power On: #4 Greeting -> then #6 Listening
+    actionStart: 0.25,
   },
   5: {
     id: 5,
@@ -59,6 +63,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     isOneShot: false,
     loop: true,
     priority: 5,
+    actionStart: 0.25,
   },
   6: {
     id: 6,
@@ -69,6 +74,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     isOneShot: false,
     loop: true,
     priority: 4,
+    actionStart: 0.83,
   },
   7: {
     id: 7,
@@ -80,6 +86,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     loop: false,
     priority: 7,
     nextDefaultStateId: 5,
+    actionStart: 1.21,
   },
   8: {
     id: 8,
@@ -91,6 +98,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     loop: false,
     priority: 7,
     nextDefaultStateId: 5,
+    actionStart: 1.08,
   },
   9: {
     id: 9,
@@ -102,6 +110,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     loop: false,
     priority: 9,
     nextDefaultStateId: 29,
+    actionStart: 0.25,
   },
   10: {
     id: 10,
@@ -113,6 +122,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     loop: false,
     priority: 7,
     nextDefaultStateId: 5,
+    actionStart: 1.17,
   },
   11: {
     id: 11,
@@ -124,6 +134,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     loop: false,
     priority: 7,
     nextDefaultStateId: 5,
+    actionStart: 0.88,
   },
   12: {
     id: 12,
@@ -135,6 +146,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     loop: false,
     priority: 7,
     nextDefaultStateId: 5,
+    actionStart: 0.92,
   },
   13: {
     id: 13,
@@ -146,6 +158,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     loop: false,
     priority: 7,
     nextDefaultStateId: 5,
+    actionStart: 0.0,
   },
   14: {
     id: 14,
@@ -157,6 +170,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     loop: false,
     priority: 7,
     nextDefaultStateId: 5,
+    actionStart: 0.46,
   },
   15: {
     id: 15,
@@ -168,6 +182,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     loop: false,
     priority: 7,
     nextDefaultStateId: 5,
+    actionStart: 0.79,
   },
   16: {
     id: 16,
@@ -179,6 +194,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     loop: false,
     priority: 7,
     nextDefaultStateId: 5,
+    actionStart: 0.21,
   },
   17: {
     id: 17,
@@ -190,6 +206,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     loop: false,
     priority: 6,
     nextDefaultStateId: 5,
+    actionStart: 0.38,
   },
   18: {
     id: 18,
@@ -201,6 +218,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     loop: false,
     priority: 8,
     nextDefaultStateId: 6,
+    actionStart: 0.21,
   },
   19: {
     id: 19,
@@ -212,6 +230,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     loop: false,
     priority: 7,
     nextDefaultStateId: 5,
+    actionStart: 0.21,
   },
   20: {
     id: 20,
@@ -223,6 +242,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     loop: false,
     priority: 7,
     nextDefaultStateId: 5,
+    actionStart: 0.38,
   },
   21: {
     id: 21,
@@ -233,6 +253,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     isOneShot: true,
     loop: false,
     priority: 6,
+    actionStart: 0.0,
   },
   22: {
     id: 22,
@@ -243,6 +264,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     isOneShot: true,
     loop: false,
     priority: 6,
+    actionStart: 0.21,
   },
   23: {
     id: 23,
@@ -253,6 +275,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     isOneShot: true,
     loop: false,
     priority: 6,
+    actionStart: 0.25,
   },
   24: {
     id: 24,
@@ -263,6 +286,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     isOneShot: true,
     loop: false,
     priority: 6,
+    actionStart: 0.21,
   },
   25: {
     id: 25,
@@ -273,6 +297,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     isOneShot: true,
     loop: false,
     priority: 6,
+    actionStart: 0.83,
   },
   26: {
     id: 26,
@@ -283,6 +308,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     isOneShot: true,
     loop: false,
     priority: 6,
+    actionStart: 0.21,
   },
   27: {
     id: 27,
@@ -294,6 +320,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     loop: false,
     priority: 6,
     nextDefaultStateId: 29,
+    actionStart: 0.25,
   },
   28: {
     id: 28,
@@ -305,6 +332,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     loop: false,
     priority: 6,
     nextDefaultStateId: 29,
+    actionStart: 1.33,
   },
   29: {
     id: 29,
@@ -315,6 +343,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     isOneShot: false,
     loop: true,
     priority: 1,
+    actionStart: 0.0,
   },
   30: {
     id: 30,
@@ -325,6 +354,7 @@ export const MAHIRU_VIDEOS: Record<number, MahiruVideoMeta> = {
     isOneShot: true,
     loop: false,
     priority: 6,
+    actionStart: 0.71,
   },
 };
 
