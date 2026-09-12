@@ -267,10 +267,48 @@ export function useMahiruAnimation({
       return;
     }
 
+    // 2b. #9 GOODBYE COMPLETED NATURALLY
+    if (currentId === 9) {
+      isOneShotActiveRef.current = false;
+      isMovementActiveRef.current = false;
+
+      // Power state must be evaluated during Goodbye flow:
+      // If power is turned OFF during/after Goodbye:
+      // - DO NOT perform exit or re-entry animation.
+      // - Preserve existing Power OFF / standby behavior on #29.
+      if (!isPowerOnRef.current || sessionState === 'disconnected') {
+        isExitActiveRef.current = false;
+        isExitReentryRef.current = false;
+        changeAnimation(29, false, true);
+        return;
+      }
+
+      // If power remains ON after #9 finishes naturally:
+      // Randomly choose ONE exit side: #24 RIGHT EXIT or #25 LEFT EXIT
+      const exitAnimId = Math.random() < 0.5 ? 24 : 25;
+      isExitActiveRef.current = true;
+      isExitReentryRef.current = false;
+      changeAnimation(exitAnimId, true);
+      return;
+    }
+
     // 3. EXIT ANIMATIONS (#24 Right Exit or #25 Left Exit) COMPLETED NATURALLY
     if (currentId === 24 || currentId === 25) {
-      // Complete exit playback naturally via onEnded.
-      // Deterministic opposite-side re-entry flow:
+      isExitActiveRef.current = false;
+
+      // Power state evaluation:
+      // If the power/session is turned OFF before the post-exit re-entry should occur:
+      // - DO NOT perform the re-entry animation.
+      // - Preserve existing Power OFF / standby behavior on #29.
+      if (!isPowerOnRef.current || sessionState === 'disconnected') {
+        isExitReentryRef.current = false;
+        isEntryActiveRef.current = false;
+        isOneShotActiveRef.current = false;
+        changeAnimation(29, false, true);
+        return;
+      }
+
+      // If power remains ON: deterministic opposite-side re-entry flow:
       // #24 Right Exit ALWAYS pairs with #22 Left Enter
       // #25 Left Exit ALWAYS pairs with #23 Right Enter
       const oppositeEnterId = currentId === 24 ? 22 : 23;
@@ -543,17 +581,23 @@ export function useMahiruAnimation({
         isExitActiveRef.current = true;
         isExitReentryRef.current = false;
       }
-      // Genuine Exit (direction unspecified): randomly choose between ONLY #24 Right Exit and #25 Left Exit
+      // Goodbye / Bye / General Exit (direction unspecified):
+      // MUST play #9 GOODBYE animation first, then naturally exit on ended
       else if (
+        act.includes('goodbye') ||
+        act.includes('bye') ||
+        act.includes('alvida') ||
         act.includes('exit') ||
         act.includes('leave') ||
         act.includes('chali jao') ||
         act.includes('nikal')
       ) {
         if (isExitActiveRef.current) return;
-        animId = Math.random() < 0.5 ? 24 : 25;
-        isExitActiveRef.current = true;
+        isExitActiveRef.current = false;
         isExitReentryRef.current = false;
+        // #9 GOODBYE animation MUST play first
+        changeAnimation(9, true);
+        return;
       }
       // #23 Right Enter (direct entry from right)
       else if (act.includes('right_enter') || act.includes('enter_right')) {

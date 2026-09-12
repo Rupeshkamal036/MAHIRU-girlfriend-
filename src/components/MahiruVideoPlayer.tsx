@@ -127,7 +127,7 @@ export const MahiruVideoPlayer: React.FC<MahiruVideoPlayerProps> = ({
     const targetEl = targetSlot === 'A' ? videoRefA.current : videoRefB.current;
     const previousEl = currentActive === 'A' ? videoRefA.current : videoRefB.current;
 
-    // Set src on target slot only
+    // Set src on target slot in React state
     if (targetSlot === 'A') {
       setSrcA(nextUrl);
     } else {
@@ -136,159 +136,252 @@ export const MahiruVideoPlayer: React.FC<MahiruVideoPlayerProps> = ({
 
     if (!targetEl) return;
 
+    // Directly synchronize DOM element src if different to prevent stale buffer checks
+    const currentTargetSrc = targetEl.getAttribute('src') || targetEl.src || '';
+    if (!currentTargetSrc.endsWith(nextUrl)) {
+      targetEl.src = nextUrl;
+    }
+
     // Target action start timestamp (in seconds)
     const targetActionStart = currentMeta.actionStart && currentMeta.actionStart > 0 ? currentMeta.actionStart : 0;
 
     let switched = false;
-    let cleanupListeners: (() => void) | null = null;
+    let cancelled = false;
+    let playStarted = false;
+    let rfcId: number | null = null;
+    let rafId1: number | null = null;
+    let rafId2: number | null = null;
+    let frameTimeout: NodeJS.Timeout | null = null;
+    let seekTimeout: NodeJS.Timeout | null = null;
+    let safetyTimer: NodeJS.Timeout | null = null;
 
-    const performCrossfade = () => {
-      // Reject stale or obsolete transition requests
-      if (switched || transitionRequestIdRef.current !== requestId) return;
-      switched = true;
+    // Guarantee that a decoded frame has actually been delivered before switching activeSlot visibility
+    const confirmFrameAndSwitch = () => {
+      if (cancelled || switched || transitionRequestIdRef.current !== requestId) return;
 
-      if (cleanupListeners) {
-        cleanupListeners();
-        cleanupListeners = null;
-      }
+      const onFrameReady = () => {
+        if (cancelled || switched || transitionRequestIdRef.current !== requestId) return;
+        switched = true;
 
-      // Ensure target element is positioned at targetActionStart (or reset to 0.0) before or as playback begins
-      try {
-        if (Math.abs(targetEl.currentTime - targetActionStart) > 0.05) {
-          targetEl.currentTime = targetActionStart;
+        if (frameTimeout) {
+          clearTimeout(frameTimeout);
+          frameTimeout = null;
         }
-      } catch {
-        // In case of media seek restrictions
+        if (rfcId !== null && typeof (targetEl as any).cancelVideoFrameCallback === 'function') {
+          try {
+            (targetEl as any).cancelVideoFrameCallback(rfcId);
+          } catch {}
+          rfcId = null;
+        }
+        if (rafId1 !== null) {
+          cancelAnimationFrame(rafId1);
+          rafId1 = null;
+        }
+        if (rafId2 !== null) {
+          cancelAnimationFrame(rafId2);
+          rafId2 = null;
+        }
+
+        // Perform the visual activeSlot switch now that the target video frame is composited!
+        setActiveSlot(targetSlot);
+
+        // Schedule previousEl pause after crossfade completes (320ms)
+        setTimeout(() => {
+          if (transitionRequestIdRef.current === requestId && activeSlotRef.current === targetSlot) {
+            if (previousEl && !previousEl.paused) {
+              previousEl.pause();
+            }
+          }
+        }, 320);
+      };
+
+      // 1. Parallel: native requestVideoFrameCallback (standard in modern Chromium, Firefox, Safari)
+      if ('requestVideoFrameCallback' in targetEl && typeof (targetEl as any).requestVideoFrameCallback === 'function') {
+        try {
+          rfcId = (targetEl as any).requestVideoFrameCallback(() => {
+            onFrameReady();
+          });
+        } catch {}
       }
 
-      // Synchronize loop property on element before playback begins
+      // 2. Parallel: Double requestAnimationFrame guarantees the browser paint loop has ticked
+      // (Ensures rapid switch without hanging when opacity: 0 suppresses compositor video frame callbacks)
+      rafId1 = requestAnimationFrame(() => {
+        rafId2 = requestAnimationFrame(() => {
+          onFrameReady();
+        });
+      });
+
+      // 3. Fast fallback timer: 50ms ensures transitions never stall under any GPU condition
+      frameTimeout = setTimeout(() => {
+        onFrameReady();
+      }, 50);
+    };
+
+    // Start playback once target is at the correct playhead and has buffered data
+    const startPlaybackAndSwitch = () => {
+      if (cancelled || switched || playStarted || transitionRequestIdRef.current !== requestId) return;
+      playStarted = true;
+
+      if (seekTimeout) {
+        clearTimeout(seekTimeout);
+        seekTimeout = null;
+      }
+
+      // Synchronize loop property before playback
       targetEl.loop = shouldLoop;
 
       targetEl
         .play()
         .then(() => {
-          if (transitionRequestIdRef.current !== requestId) return;
-          setActiveSlot(targetSlot);
-
-          // Listen for targetEl actually rendering frames/playing before scheduling previousEl pause
-          const onPlayingOrRendered = () => {
-            setTimeout(() => {
-              if (transitionRequestIdRef.current === requestId && activeSlotRef.current === targetSlot) {
-                if (previousEl) {
-                  previousEl.pause();
-                }
-              }
-            }, 320);
-          };
-
-          if (!targetEl.paused && targetEl.readyState >= 3) {
-            onPlayingOrRendered();
-          } else {
-            targetEl.addEventListener('playing', onPlayingOrRendered, { once: true });
-          }
+          if (cancelled || transitionRequestIdRef.current !== requestId) return;
+          confirmFrameAndSwitch();
         })
         .catch((err: any) => {
           if (err?.name === 'AbortError' || err?.name === 'NotAllowedError') return;
-          console.debug('[VideoPlayer] Play interrupted or failed:', err?.message);
-          // Graceful error fallback: keep previous visible video instead of black screen
+          console.debug('[VideoPlayer] Target play interrupted or failed:', err?.message);
+          // Graceful error fallback: keep previous visible video playing without black flash
           if (previousEl && previousEl.paused) {
             previousEl.play().catch(() => {});
           }
         });
     };
 
-    // Error fallback handler: If target video errors, keep current active video
-    const handleTargetError = () => {
-      if (switched || transitionRequestIdRef.current !== requestId) return;
-      console.warn('[VideoPlayer] Target video failed to load, retaining current video:', nextUrl);
-      if (cleanupListeners) {
-        cleanupListeners();
-        cleanupListeners = null;
+    // When seek completes, proceed to start playback
+    const handleSeeked = () => {
+      targetEl.removeEventListener('seeked', handleSeeked);
+      if (cancelled || transitionRequestIdRef.current !== requestId) return;
+
+      if (targetEl.readyState >= 2) {
+        startPlaybackAndSwitch();
+      } else {
+        targetEl.addEventListener('canplay', () => startPlaybackAndSwitch(), { once: true });
       }
-      // Keep previous video alive and playing
+    };
+
+    // Check if seek is needed and perform seek, or proceed directly
+    const preparePlayheadAndPlay = () => {
+      if (cancelled || switched || playStarted || transitionRequestIdRef.current !== requestId) return;
+
+      // If metadata is not loaded yet (readyState < 1), wait for loadedmetadata
+      if (targetEl.readyState < 1) {
+        targetEl.addEventListener(
+          'loadedmetadata',
+          () => {
+            if (!cancelled && transitionRequestIdRef.current === requestId) {
+              preparePlayheadAndPlay();
+            }
+          },
+          { once: true }
+        );
+        return;
+      }
+
+      const needsSeek = Math.abs(targetEl.currentTime - targetActionStart) > 0.05;
+      if (needsSeek) {
+        targetEl.addEventListener('seeked', handleSeeked, { once: true });
+        // 200ms seek safety timeout prevents indefinite waiting if browser skips event
+        seekTimeout = setTimeout(() => {
+          if (!playStarted && !cancelled && transitionRequestIdRef.current === requestId) {
+            targetEl.removeEventListener('seeked', handleSeeked);
+            startPlaybackAndSwitch();
+          }
+        }, 200);
+
+        try {
+          targetEl.currentTime = targetActionStart;
+        } catch {
+          targetEl.removeEventListener('seeked', handleSeeked);
+          if (seekTimeout) clearTimeout(seekTimeout);
+          startPlaybackAndSwitch();
+        }
+      } else if (targetEl.seeking) {
+        targetEl.addEventListener('seeked', handleSeeked, { once: true });
+        seekTimeout = setTimeout(() => {
+          if (!playStarted && !cancelled && transitionRequestIdRef.current === requestId) {
+            targetEl.removeEventListener('seeked', handleSeeked);
+            startPlaybackAndSwitch();
+          }
+        }, 200);
+      } else {
+        startPlaybackAndSwitch();
+      }
+    };
+
+    const handleCanPlay = () => {
+      if (cancelled || switched || playStarted || transitionRequestIdRef.current !== requestId) return;
+      preparePlayheadAndPlay();
+    };
+
+    // Error fallback handler: retain current visible video, never flash black
+    const handleTargetError = () => {
+      if (cancelled || switched || transitionRequestIdRef.current !== requestId) return;
+      console.warn('[VideoPlayer] Target video error, retaining current visible video:', nextUrl);
+      cleanup();
       if (previousEl && previousEl.paused) {
         previousEl.play().catch(() => {});
       }
     };
 
-    // Fast-path for seeking when metadata is loaded
-    const onLoadedMetadata = () => {
-      if (targetActionStart > 0) {
+    // Cleanup all listeners, pending animation frames, and timers
+    const cleanup = () => {
+      cancelled = true;
+      targetEl.removeEventListener('loadedmetadata', handleCanPlay);
+      targetEl.removeEventListener('loadeddata', handleCanPlay);
+      targetEl.removeEventListener('canplay', handleCanPlay);
+      targetEl.removeEventListener('seeked', handleSeeked);
+      targetEl.removeEventListener('error', handleTargetError);
+      if (safetyTimer) {
+        clearTimeout(safetyTimer);
+        safetyTimer = null;
+      }
+      if (seekTimeout) {
+        clearTimeout(seekTimeout);
+        seekTimeout = null;
+      }
+      if (frameTimeout) {
+        clearTimeout(frameTimeout);
+        frameTimeout = null;
+      }
+      if (rfcId !== null && typeof (targetEl as any).cancelVideoFrameCallback === 'function') {
         try {
-          if (Math.abs(targetEl.currentTime - targetActionStart) > 0.05) {
-            targetEl.currentTime = targetActionStart;
-          }
+          (targetEl as any).cancelVideoFrameCallback(rfcId);
         } catch {}
+        rfcId = null;
+      }
+      if (rafId1 !== null) {
+        cancelAnimationFrame(rafId1);
+        rafId1 = null;
+      }
+      if (rafId2 !== null) {
+        cancelAnimationFrame(rafId2);
+        rafId2 = null;
       }
     };
 
-    // Attach listeners with clean teardown
-    const onLoadedData = () => {
-      // If an actionStart seek is needed and element is still at 0, seek first and await seeked
-      if (targetActionStart > 0 && targetEl.currentTime < targetActionStart - 0.05) {
-        try {
-          targetEl.currentTime = targetActionStart;
-          targetEl.addEventListener('seeked', () => performCrossfade(), { once: true });
-          return;
-        } catch {}
-      }
-      performCrossfade();
-    };
-
-    const onCanPlay = () => {
-      if (targetActionStart > 0 && targetEl.currentTime < targetActionStart - 0.05) {
-        try {
-          targetEl.currentTime = targetActionStart;
-          targetEl.addEventListener('seeked', () => performCrossfade(), { once: true });
-          return;
-        } catch {}
-      }
-      performCrossfade();
-    };
-
-    targetEl.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
-    targetEl.addEventListener('loadeddata', onLoadedData, { once: true });
-    targetEl.addEventListener('canplay', onCanPlay, { once: true });
+    targetEl.addEventListener('loadedmetadata', handleCanPlay, { once: true });
+    targetEl.addEventListener('loadeddata', handleCanPlay, { once: true });
+    targetEl.addEventListener('canplay', handleCanPlay, { once: true });
     targetEl.addEventListener('error', handleTargetError, { once: true });
 
-    cleanupListeners = () => {
-      targetEl.removeEventListener('loadedmetadata', onLoadedMetadata);
-      targetEl.removeEventListener('loadeddata', onLoadedData);
-      targetEl.removeEventListener('canplay', onCanPlay);
-      targetEl.removeEventListener('error', handleTargetError);
-    };
-
-    // If target element already has buffered data ready to play, crossfade safely
-    if (targetEl.readyState >= 3) {
-      if (Math.abs(targetEl.currentTime - targetActionStart) > 0.05) {
-        try {
-          targetEl.currentTime = targetActionStart;
-          targetEl.addEventListener('seeked', () => performCrossfade(), { once: true });
-        } catch {
-          performCrossfade();
-        }
-      } else {
-        performCrossfade();
-      }
-    } else {
-      // Safety timeout (max 400ms) to ensure transition never permanently hangs
-      const safetyTimer = setTimeout(() => {
-        if (!switched && transitionRequestIdRef.current === requestId) {
-          performCrossfade();
-        }
-      }, 400);
-
-      const origCleanup = cleanupListeners;
-      cleanupListeners = () => {
-        clearTimeout(safetyTimer);
-        origCleanup();
-      };
+    // If target element is already ready (readyState >= 2 HAVE_CURRENT_DATA)
+    if (targetEl.readyState >= 2) {
+      preparePlayheadAndPlay();
     }
 
-    return () => {
-      if (cleanupListeners) {
-        cleanupListeners();
+    // Safety fallback: if transition is delayed, safely confirm switch once ready
+    safetyTimer = setTimeout(() => {
+      if (!switched && !cancelled && transitionRequestIdRef.current === requestId) {
+        if (targetEl.readyState >= 2) {
+          confirmFrameAndSwitch();
+        } else if (previousEl && previousEl.paused) {
+          previousEl.play().catch(() => {});
+        }
       }
+    }, 1500);
+
+    return () => {
+      cleanup();
     };
   }, [currentAnimId, availableFiles]);
 
