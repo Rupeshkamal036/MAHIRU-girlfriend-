@@ -6,6 +6,15 @@ import dotenv from 'dotenv';
 import { WebSocketServer, WebSocket } from 'ws';
 import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
+import {
+  getMemories,
+  createMemory,
+  deleteMemory,
+  resolveUserIdFromRequest,
+  DEFAULT_USER_ID,
+  getMemoryStoreHealth,
+} from './server/memoryStore';
+import { isFirestoreAvailable, TARGET_FIRESTORE_DATABASE_ID, TARGET_FIREBASE_PROJECT_ID } from './server/firebaseAdmin';
 
 dotenv.config();
 
@@ -17,65 +26,59 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Memories endpoints for persistent user memories
-  const MEMORIES_FILE = path.join(process.cwd(), 'data', 'memories.json');
-  function readMemories(): any[] {
+  // Cloud persistent memory endpoints via server/memoryStore.ts
+  app.get('/api/memories', async (req, res) => {
     try {
-      if (fs.existsSync(MEMORIES_FILE)) {
-        return JSON.parse(fs.readFileSync(MEMORIES_FILE, 'utf-8'));
-      }
-    } catch (e) {
-      console.warn('[Memories] Error reading file:', e);
-    }
-    return [];
-  }
-
-  function writeMemories(mems: any[]): void {
-    try {
-      const dir = path.dirname(MEMORIES_FILE);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(MEMORIES_FILE, JSON.stringify(mems, null, 2), 'utf-8');
-    } catch (e) {
-      console.warn('[Memories] Error writing file:', e);
-    }
-  }
-
-  app.get('/api/memories', (req, res) => {
-    res.json({ memories: readMemories() });
-  });
-
-  app.post('/api/memories', (req, res) => {
-    const memory = req.body;
-    if (!memory || !memory.content) {
-      return res.status(400).json({ error: 'Content is required' });
-    }
-    const mems = readMemories();
-    const existingIndex = mems.findIndex((m: any) => m.id === memory.id);
-    if (existingIndex >= 0) {
-      mems[existingIndex] = { ...mems[existingIndex], ...memory };
-    } else {
-      mems.unshift({
-        id: memory.id || Date.now().toString(),
-        category: memory.category || 'PREFERENCES',
-        priority: memory.priority || 'HIGH',
-        retention: memory.retention || 'PERMANENT',
-        content: String(memory.content).trim(),
-        source: memory.source || 'ADDED BY USER',
-        lastRecalled: 'Just now',
-        isPermanent: true,
-        createdAt: Date.now(),
+      const userId = resolveUserIdFromRequest(req);
+      const category = typeof req.query.category === 'string' ? req.query.category : undefined;
+      const memories = await getMemories(userId, { category });
+      res.json({ success: true, memories });
+    } catch (error: any) {
+      console.log('[API] Notice in GET /api/memories:', error?.message || error);
+      res.status(200).json({
+        success: true,
+        memories: [],
+        error: error?.message,
       });
     }
-    writeMemories(mems);
-    res.json({ success: true, memories: mems });
   });
 
-  app.delete('/api/memories/:id', (req, res) => {
-    const { id } = req.params;
-    let mems = readMemories();
-    mems = mems.filter((m: any) => m.id !== id);
-    writeMemories(mems);
-    res.json({ success: true, memories: mems });
+  app.post('/api/memories', async (req, res) => {
+    try {
+      const memory = req.body;
+      if (!memory || (!memory.content && !memory.value)) {
+        return res.status(400).json({ success: false, error: 'Memory content is required' });
+      }
+      const userId = resolveUserIdFromRequest(req);
+      const saved = await createMemory(userId, memory);
+      const memories = await getMemories(userId);
+      res.json({ success: true, memory: saved, memories });
+    } catch (error: any) {
+      console.log('[API] Notice in POST /api/memories:', error?.message || error);
+      res.status(500).json({
+        success: false,
+        error: error?.message || 'Failed to persist memory',
+      });
+    }
+  });
+
+  app.delete('/api/memories/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!id || !id.trim()) {
+        return res.status(400).json({ success: false, error: 'Memory ID is required' });
+      }
+      const userId = resolveUserIdFromRequest(req);
+      await deleteMemory(userId, id.trim());
+      const memories = await getMemories(userId);
+      res.json({ success: true, memories });
+    } catch (error: any) {
+      console.log('[API] Notice in DELETE /api/memories/:id:', error?.message || error);
+      res.status(500).json({
+        success: false,
+        error: error?.message || 'Failed to delete memory',
+      });
+    }
   });
 
   // Health check endpoint
@@ -84,6 +87,10 @@ async function startServer() {
       status: 'ok',
       hasApiKey: Boolean(process.env.GEMINI_API_KEY),
       model: 'gemini-3.1-flash-live-preview',
+      firestoreConfigured: isFirestoreAvailable(),
+      targetDatabaseId: TARGET_FIRESTORE_DATABASE_ID,
+      targetProjectId: TARGET_FIREBASE_PROJECT_ID,
+      memoryHealth: getMemoryStoreHealth(),
     });
   });
 
@@ -221,7 +228,13 @@ async function startServer() {
 
       console.log('[Live Gateway] Initializing Gemini Live session with gemini-3.1-flash-live-preview...');
 
-      const existingMemories = readMemories();
+      let existingMemories: any[] = [];
+      try {
+        existingMemories = await getMemories(DEFAULT_USER_ID);
+        console.log(`[Live Gateway] Injected ${existingMemories.length} permanent memories into Mahiru's conversation context.`);
+      } catch (memErr: any) {
+        console.log('[Live Gateway] Defaulting to standard memory context:', memErr?.message || memErr);
+      }
       const memoriesSummary = existingMemories.length > 0
         ? `\n\nPERMANENT MEMORIES ABOUT USER (ALWAYS REMEMBER AND ADHERE TO THESE IN CONVERSATION):\n` +
           existingMemories.map((m: any) => `- [${m.category || 'PREFERENCE'}] ${m.content}`).join('\n')

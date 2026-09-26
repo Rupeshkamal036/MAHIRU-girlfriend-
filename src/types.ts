@@ -86,3 +86,25 @@ export interface AmbientLightState {
   isBreathing: boolean;
 }
 
+export type MemoryCategory = 'USER PROFILE' | 'PREFERENCES' | 'CONVERSATION' | 'SYSTEM' | string;
+export type MemoryPriority = 'HIGH' | 'MEDIUM' | 'LOW';
+
+export interface MemoryRecord {
+  id: string;
+  memoryId: string;
+  userId: string;
+  category: MemoryCategory;
+  key: string;
+  value: string;
+  content: string;
+  priority: MemoryPriority;
+  importance: MemoryPriority;
+  retention: string;
+  source: string;
+  lastRecalled: string;
+  isPermanent: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+
