@@ -1,11 +1,27 @@
+import fs from 'fs';
+import path from 'path';
 import { initializeApp, getApps, cert, type App } from 'firebase-admin/app';
 import { getFirestore, FieldValue, Timestamp, type Firestore } from 'firebase-admin/firestore';
 
+let appletConfig: any = {};
+try {
+  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(configPath)) {
+    appletConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+  }
+} catch (e) {
+  // ignore
+}
+
 export const TARGET_FIREBASE_PROJECT_ID =
-  process.env.FIREBASE_PROJECT_ID || 'proven-lodge-m5xj8';
+  appletConfig.projectId ||
+  process.env.FIREBASE_PROJECT_ID ||
+  'mahiru-girlfriend';
 
 export const TARGET_FIRESTORE_DATABASE_ID =
-  process.env.FIREBASE_DATABASE_ID || 'ai-studio-059d2266-7332-4365-bdc2-4c4b26157049';
+  appletConfig.firestoreDatabaseId ||
+  process.env.FIREBASE_DATABASE_ID ||
+  'ai-studio-mahirugirlfriend-7a4a6211-3054-4b5b-97be-902107c88ad6';
 
 let dbInstance: Firestore | null = null;
 let initAttempted = false;

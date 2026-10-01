@@ -86,7 +86,36 @@ export interface AmbientLightState {
   isBreathing: boolean;
 }
 
-export type MemoryCategory = 'USER PROFILE' | 'PREFERENCES' | 'CONVERSATION' | 'SYSTEM' | string;
+export type SemanticMemoryCategory =
+  | 'personal_profile'
+  | 'interests'
+  | 'watching_entertainment'
+  | 'gaming'
+  | 'food'
+  | 'drinks'
+  | 'activities'
+  | 'learning'
+  | 'travel'
+  | 'music'
+  | 'technology'
+  | 'goals_and_projects'
+  | 'relationships'
+  | 'communication_style'
+  | 'lifestyle_and_routines'
+  | 'important_facts'
+  | 'favorites';
+
+export type MemoryCategory =
+  | SemanticMemoryCategory
+  // Backward compatibility legacy categories
+  | 'USER_PROFILE'
+  | 'USER PROFILE'
+  | 'PREFERENCES'
+  | 'GOALS_AND_PROJECTS'
+  | 'CONVERSATION'
+  | 'SYSTEM'
+  | string;
+
 export type MemoryPriority = 'HIGH' | 'MEDIUM' | 'LOW';
 
 export interface MemoryRecord {
@@ -94,7 +123,9 @@ export interface MemoryRecord {
   memoryId: string;
   userId: string;
   category: MemoryCategory;
+  semanticCategory?: MemoryCategory;
   key: string;
+  semanticKey?: string;
   value: string;
   content: string;
   priority: MemoryPriority;
@@ -105,6 +136,57 @@ export interface MemoryRecord {
   isPermanent: boolean;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface MemoryCandidate {
+  category: MemoryCategory;
+  semanticCategory?: MemoryCategory;
+  key: string;
+  semanticKey?: string;
+  value: string;
+  confidence: number;
+  source: 'conversation' | string;
+  reason?: string;
+  priority?: MemoryPriority;
+  retention?: 'PERMANENT' | 'LONG_TERM' | string;
+  isExplicitNew?: boolean;
+}
+
+export interface MemoryExtractionInput {
+  text: string;
+  conversationHistory?: Array<{
+    role: 'user' | 'assistant' | 'model';
+    text: string;
+  }>;
+  speaker?: 'user' | 'assistant';
+  userId?: string;
+}
+
+export interface MemoryExtractionResult {
+  candidates: MemoryCandidate[];
+  inputAnalyzed: string;
+  extractedCount: number;
+  engine: 'gemini' | 'rule_based' | 'hybrid';
+  timestamp: number;
+}
+
+export interface CandidatePersistenceResult {
+  candidate: MemoryCandidate;
+  status: 'created' | 'updated' | 'duplicate' | 'rejected' | 'similar_requires_decision';
+  decision?: 'EXACT_DUPLICATE' | 'NEW_MEMORY' | 'SIMILAR_REQUIRES_USER_DECISION';
+  reason?: string;
+  message?: string;
+  clarificationPrompt?: string;
+  memory?: MemoryRecord;
+  existingMemory?: MemoryRecord;
+}
+
+export interface PersistenceBatchResult {
+  persistedCount: number;
+  duplicateCount: number;
+  rejectedCount: number;
+  similarDecisionCount?: number;
+  results: CandidatePersistenceResult[];
 }
 
 

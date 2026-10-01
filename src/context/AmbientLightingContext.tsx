@@ -49,8 +49,8 @@ export const AmbientLightingProvider: React.FC<{
   });
 
   const updateActiveState = useCallback((sState: SessionState, aId: number) => {
-    setActiveSessionState(sState);
-    setActiveAnimId(aId);
+    setActiveSessionState((prev) => (prev === sState ? prev : sState));
+    setActiveAnimId((prev) => (prev === aId ? prev : aId));
   }, []);
 
   // Calculate emotion-based lighting when in auto mode
@@ -506,18 +506,17 @@ export const AmbientLightingProvider: React.FC<{
   );
 };
 
+const DEFAULT_CONTEXT_VALUE: AmbientLightingContextType = {
+  lightState: DEFAULT_LIGHT_STATE,
+  setColor: () => {},
+  setBrightness: () => {},
+  setMode: () => {},
+  resetToAuto: () => {},
+  handleVoiceCommand: () => false,
+  updateActiveState: () => {},
+};
+
 export const useAmbientLighting = () => {
   const context = useContext(AmbientLightingContext);
-  if (!context) {
-    return {
-      lightState: DEFAULT_LIGHT_STATE,
-      setColor: () => {},
-      setBrightness: () => {},
-      setMode: () => {},
-      resetToAuto: () => {},
-      handleVoiceCommand: () => false,
-      updateActiveState: () => {},
-    };
-  }
-  return context;
+  return context || DEFAULT_CONTEXT_VALUE;
 };

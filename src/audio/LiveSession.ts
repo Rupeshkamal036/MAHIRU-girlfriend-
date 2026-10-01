@@ -1,5 +1,6 @@
 import { AudioStreamer } from './AudioStreamer';
 import { ReactionState, ReactionType, SessionState, ToolCallData, ToolResponseData } from '../types';
+import { getAppSessionId } from '../utils/session';
 
 export interface LiveSessionCallbacks {
   onStateChange: (state: SessionState) => void;
@@ -12,6 +13,7 @@ export interface LiveSessionCallbacks {
   onMovementCommand?: (action: string) => void;
   onInterrupted?: () => void;
   onConversationStyle?: (style: 'greeting' | 'explaining' | 'talking') => void;
+  onMemoryPersisted?: (data: { userTurn: string; persistedCount: number; duplicateCount: number; results: any[] }) => void;
 }
 
 export class LiveSession {
@@ -74,7 +76,8 @@ export class LiveSession {
 
       // 2. Open WebSocket to backend Live gateway
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws/live`;
+      const sessionId = getAppSessionId();
+      const wsUrl = `${protocol}//${window.location.host}/ws/live?sessionId=${encodeURIComponent(sessionId)}`;
       console.log('[LiveSession] Connecting to WebSocket at:', wsUrl);
 
       this.ws = new WebSocket(wsUrl);
@@ -222,6 +225,13 @@ export class LiveSession {
     this.setState('speaking');
   }
 
+  public sendUserTurn(text: string): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    this.ws.send(JSON.stringify({ type: 'userTurn', text }));
+  }
+
   public sendMediaAttachment(base64Data: string, mimeType: string, filename: string): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       console.log('[LiveSession] Cannot send media: socket not open');
@@ -292,6 +302,27 @@ export class LiveSession {
       case 'turnComplete':
         console.log('[LiveSession] Model turn complete');
         // Will revert to listening once audio buffer drains
+        break;
+
+      case 'memoryPersisted':
+        console.log('[LiveSession] Memory persisted event received:', msg);
+        if (this.callbacks.onMemoryPersisted) {
+          this.callbacks.onMemoryPersisted(msg);
+        }
+        break;
+
+      case 'securityChanged':
+        console.log('[LiveSession] Security changed event received:', msg);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('mahiru:security-changed', { detail: msg }));
+        }
+        break;
+
+      case 'automaticMemorySavingChanged':
+        console.log('[LiveSession] Automatic memory saving changed event received:', msg);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('mahiru:memory-saving-changed', { detail: msg }));
+        }
         break;
 
       case 'toolCall':

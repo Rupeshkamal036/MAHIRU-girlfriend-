@@ -1,7 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Power, Mic, MicOff, Monitor, Send, Paperclip } from 'lucide-react';
 import { SessionState } from '../types';
+
+interface ActionStatusData {
+  id: number;
+  line1: string;
+  line2: string;
+  state: 'on' | 'off' | 'success';
+}
 
 interface FirstReferenceBottomControlsProps {
   state: SessionState;
@@ -29,9 +36,81 @@ export const FirstReferenceBottomControls: React.FC<FirstReferenceBottomControls
   currentAnimId,
 }) => {
   const [inputText, setInputText] = useState('');
+  const [actionStatus, setActionStatus] = useState<ActionStatusData | null>(null);
+  const actionTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const isConnected = state !== 'disconnected' && state !== 'connecting';
   const isConnecting = state === 'connecting';
+
+  const displayActionStatus = (data: Omit<ActionStatusData, 'id'>) => {
+    if (actionTimerRef.current) {
+      clearTimeout(actionTimerRef.current);
+    }
+    setActionStatus({
+      id: Date.now(),
+      ...data,
+    });
+    actionTimerRef.current = setTimeout(() => {
+      setActionStatus(null);
+      actionTimerRef.current = null;
+    }, 3000);
+  };
+
+  useEffect(() => {
+    // 1. Listen for Memory Saving changes from WebSocket / API
+    const handleMemorySavingChanged = (e: any) => {
+      if (e?.detail?.isInit) return;
+      const enabled = e?.detail?.enabled ?? e?.detail?.automaticMemorySaving;
+      if (typeof enabled !== 'boolean') return;
+
+      displayActionStatus({
+        line1: 'MEMORY SAVING',
+        line2: enabled ? 'ON ho gaya' : 'OFF ho gaya',
+        state: enabled ? 'on' : 'off',
+      });
+    };
+
+    // 2. Listen for Security changes from WebSocket / API
+    const handleSecurityChanged = (e: any) => {
+      if (e?.detail?.isInit) return;
+      const enabled =
+        typeof e?.detail?.enabled === 'boolean'
+          ? e.detail.enabled
+          : typeof e?.detail?.status?.isEnabled === 'boolean'
+          ? e.detail.status.isEnabled
+          : null;
+
+      if (enabled === null) return;
+
+      displayActionStatus({
+        line1: 'SECURITY',
+        line2: enabled ? 'ON ho gaya' : 'Band ho gaya',
+        state: enabled ? 'on' : 'off',
+      });
+    };
+
+    // 3. Listen for direct / custom action status events
+    const handleCustomAction = (e: any) => {
+      if (e?.detail?.title && e?.detail?.description) {
+        displayActionStatus({
+          line1: String(e.detail.title).toUpperCase(),
+          line2: String(e.detail.description),
+          state: e.detail.state || 'success',
+        });
+      }
+    };
+
+    window.addEventListener('mahiru:memory-saving-changed', handleMemorySavingChanged);
+    window.addEventListener('mahiru:security-changed', handleSecurityChanged);
+    window.addEventListener('mahiru:bottom-action-toast', handleCustomAction);
+
+    return () => {
+      if (actionTimerRef.current) clearTimeout(actionTimerRef.current);
+      window.removeEventListener('mahiru:memory-saving-changed', handleMemorySavingChanged);
+      window.removeEventListener('mahiru:security-changed', handleSecurityChanged);
+      window.removeEventListener('mahiru:bottom-action-toast', handleCustomAction);
+    };
+  }, []);
 
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,13 +144,50 @@ export const FirstReferenceBottomControls: React.FC<FirstReferenceBottomControls
 
   return (
     <div className="w-full max-w-md mx-auto px-4 flex flex-col items-center select-none z-30">
-      {/* 1. Status Text directly above controls matching Reference 1 */}
-      <div className="mb-3 text-center transition-all duration-300">
-        <p
-          className={`text-[11px] sm:text-xs font-semibold tracking-[0.2em] uppercase font-['Outfit'] ${statusColor}`}
-        >
-          {statusMessage}
-        </p>
+      {/* 1. Status Text Area directly above text input bar matching Reference 1 */}
+      <div className="w-full mb-3 min-h-[38px] flex items-center justify-center text-center transition-all duration-300">
+        <AnimatePresence mode="wait">
+          {actionStatus ? (
+            <motion.div
+              key={`action-${actionStatus.id}`}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              className="flex flex-col items-center justify-center leading-snug"
+            >
+              <span
+                className={`text-[11px] sm:text-xs font-semibold tracking-[0.2em] uppercase font-['Outfit'] ${
+                  actionStatus.state === 'off'
+                    ? 'text-rose-300 drop-shadow-[0_0_12px_rgba(244,63,94,0.7)]'
+                    : 'text-cyan-300 drop-shadow-[0_0_12px_rgba(6,182,212,0.7)]'
+                }`}
+              >
+                {actionStatus.line1}
+              </span>
+              <span
+                className={`text-[11px] sm:text-xs font-semibold tracking-[0.2em] uppercase font-['Outfit'] mt-0.5 ${
+                  actionStatus.state === 'off'
+                    ? 'text-rose-200 drop-shadow-[0_0_12px_rgba(244,63,94,0.6)]'
+                    : 'text-cyan-200 drop-shadow-[0_0_12px_rgba(6,182,212,0.6)]'
+                }`}
+              >
+                {actionStatus.line2}
+              </span>
+            </motion.div>
+          ) : (
+            <motion.p
+              key={`status-${statusMessage}`}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+              className={`text-[11px] sm:text-xs font-semibold tracking-[0.2em] uppercase font-['Outfit'] ${statusColor}`}
+            >
+              {statusMessage}
+            </motion.p>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* 2. Text Input Bar & Waveform (ONLY when connected) */}

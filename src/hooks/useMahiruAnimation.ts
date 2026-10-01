@@ -67,7 +67,7 @@ export function useMahiruAnimation({
    */
   const changeAnimation = useCallback(
     (id: number, isOneShot: boolean = false, force: boolean = false) => {
-      if (currentAnimIdRef.current === id && !isOneShot && !force) {
+      if (currentAnimIdRef.current === id && !force) {
         return;
       }
 
@@ -110,8 +110,10 @@ export function useMahiruAnimation({
       isAiSpeakingRef.current = false;
       conversationModeRef.current = 'talking';
 
-      // Default standby state #29 Idle / Waiting
-      changeAnimation(29, false, true);
+      // Default standby state #29 Idle / Waiting (only if not already 29)
+      if (currentAnimIdRef.current !== 29) {
+        changeAnimation(29, false);
+      }
       return;
     }
 

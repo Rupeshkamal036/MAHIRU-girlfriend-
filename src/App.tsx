@@ -6,6 +6,7 @@ import { LiveSession } from './audio/LiveSession';
 import { useMahiruAnimation } from './hooks/useMahiruAnimation';
 import { AmbientLightingProvider, useAmbientLighting } from './context/AmbientLightingContext';
 import { matchVoiceMomentCommand } from './data/voiceCommandMatcher';
+import { getAppSessionId } from './utils/session';
 
 // Components faithfully matching FIRST Screen Recording Blueprint
 import { AmbientBackground } from './components/AmbientBackground';
@@ -73,6 +74,18 @@ function MahiruCompanionApp() {
   useEffect(() => {
     updateActiveState(sessionState, currentAnimId);
   }, [sessionState, currentAnimId, updateActiveState]);
+
+  // Authoritatively initialize memory security as ON for this application session
+  useEffect(() => {
+    fetch('/api/memory-security/init-session', {
+      method: 'POST',
+      headers: {
+        'x-session-id': getAppSessionId(),
+      },
+    }).catch((err) => {
+      console.warn('[App] Session security initialization note:', err);
+    });
+  }, []);
 
   // Stable callback ref to prevent teardown of LiveSession on reactive re-renders
   const callbacksRef = useRef({
@@ -172,6 +185,12 @@ function MahiruCompanionApp() {
     onConversationStyle: (style) => {
       setConversationStyle(style);
     },
+    onMemoryPersisted: (data: any) => {
+      console.log('[Mahiru Live] Memory automatically persisted:', data);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('mahiru:memory-changed', { detail: data }));
+      }
+    },
   };
 
   // Initialize LiveSession once per component mount
@@ -187,6 +206,7 @@ function MahiruCompanionApp() {
       onMovementCommand: (action) => callbacksRef.current.onMovementCommand(action),
       onInterrupted: () => callbacksRef.current.onInterrupted(),
       onConversationStyle: (style) => callbacksRef.current.onConversationStyle?.(style),
+      onMemoryPersisted: (data) => callbacksRef.current.onMemoryPersisted?.(data),
     });
 
     liveSessionRef.current = session;
@@ -294,6 +314,27 @@ function MahiruCompanionApp() {
     [handleVoiceCommand, setConversationStyle, triggerMovement, triggerEmotion, triggerDirectMoment]
   );
 
+  const handleClearReaction = useCallback(() => {
+    setReaction(null);
+  }, []);
+
+  // Stable ref for voice command handlers to prevent SpeechRecognition churn
+  const speechHandlersRef = useRef({
+    handleVoiceCommand,
+    setConversationStyle,
+    triggerMovement,
+    triggerEmotion,
+    triggerDirectMoment,
+  });
+
+  speechHandlersRef.current = {
+    handleVoiceCommand,
+    setConversationStyle,
+    triggerMovement,
+    triggerEmotion,
+    triggerDirectMoment,
+  };
+
   // Passive speech recognition for real-time speech intent matching
   useEffect(() => {
     if (sessionState === 'disconnected' || isMuted || !isMicAvailable) return;
@@ -312,32 +353,42 @@ function MahiruCompanionApp() {
 
       recognizer.onresult = (event: any) => {
         if (!isActive) return;
+        const handlers = speechHandlersRef.current;
         for (let i = event.resultIndex; i < event.results.length; i++) {
+          const isFinal = Boolean(event.results[i]?.isFinal);
           const transcript = event.results[i][0]?.transcript || '';
           if (!transcript.trim()) continue;
+
+          // When speech recognition finalizes a turn, send to Live Gateway for automatic memory pipeline
+          if (isFinal) {
+            const finalUtterance = transcript.trim();
+            if (finalUtterance.length >= 4 && liveSessionRef.current) {
+              liveSessionRef.current.sendUserTurn(finalUtterance);
+            }
+          }
 
           // Direct voice moment trigger on spoken speech
           const match = matchVoiceMomentCommand(transcript);
           if (match) {
             if (match.isExit) {
-              triggerMovement(match.movementAction || 'exit');
+              handlers.triggerMovement(match.movementAction || 'exit');
             } else if (match.movementAction) {
-              triggerMovement(match.movementAction);
+              handlers.triggerMovement(match.movementAction);
             } else if (match.reactionType) {
-              triggerEmotion(match.reactionType);
+              handlers.triggerEmotion(match.reactionType);
             } else {
-              triggerDirectMoment(match.animId);
+              handlers.triggerDirectMoment(match.animId);
             }
           }
 
           // Ambient lighting voice commands
-          handleVoiceCommand(transcript);
+          handlers.handleVoiceCommand(transcript);
 
           const lowerTranscript = transcript.toLowerCase();
           if (/\b(hello|hi\b|hey\b|namaste|salaam|kaise ho|kaisa hai)\b/i.test(lowerTranscript)) {
-            setConversationStyle('greeting');
+            handlers.setConversationStyle('greeting');
           } else if (/\b(explain|how to|why|samjhao|batao|guide)\b/i.test(lowerTranscript)) {
-            setConversationStyle('explaining');
+            handlers.setConversationStyle('explaining');
           }
         }
       };
@@ -362,7 +413,7 @@ function MahiruCompanionApp() {
         } catch {}
       }
     };
-  }, [sessionState, isMuted, isMicAvailable, setConversationStyle, handleVoiceCommand, triggerMovement, triggerEmotion, triggerDirectMoment]);
+  }, [sessionState, isMuted, isMicAvailable]);
 
   const handleHeartClick = useCallback(() => {
     triggerEmotion('love');
@@ -410,7 +461,7 @@ function MahiruCompanionApp() {
       <ReactionBanner
         reaction={reaction}
         lastToolCall={lastToolCall}
-        onClearReaction={() => setReaction(null)}
+        onClearReaction={handleClearReaction}
       />
 
       {/* Error alert toast */}

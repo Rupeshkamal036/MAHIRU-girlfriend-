@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "MemoryRecord": {
+      "title": "MemoryRecord",
+      "description": "Permanent memories and preferences for Mahiru companion",
+      "type": "object",
+      "properties": {
+        "memoryId": {
+          "type": "string",
+          "description": "Unique identifier of the memory record"
+        },
+        "userId": {
+          "type": "string",
+          "description": "User identifier who owns the memory"
+        },
+        "category": {
+          "type": "string",
+          "description": "Category such as USER PROFILE, PREFERENCES, CONVERSATION"
+        },
+        "key": {
+          "type": "string",
+          "description": "Summary label or key phrase"
+        },
+        "value": {
+          "type": "string",
+          "description": "Content of the memory"
+        },
+        "content": {
+          "type": "string",
+          "description": "Full text of the memory"
+        },
+        "priority": {
+          "type": "string",
+          "description": "HIGH, MEDIUM, or LOW"
+        },
+        "importance": {
+          "type": "string",
+          "description": "HIGH, MEDIUM, or LOW"
+        },
+        "retention": {
+          "type": "string",
+          "description": "PERMANENT or SESSION"
+        },
+        "source": {
+          "type": "string",
+          "description": "Source of origin"
+        },
+        "lastRecalled": {
+          "type": "string",
+          "description": "Timestamp description"
+        },
+        "isPermanent": {
+          "type": "boolean",
+          "description": "Whether memory is permanent"
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Epoch timestamp in milliseconds"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Epoch timestamp in milliseconds"
+        }
+      },
+      "required": ["memoryId", "userId", "content"]
+    }
+  },
+  "firestore": {
+    "/mahiru_memories/{memoryId}": {
+      "schema": "#/entities/MemoryRecord",
+      "description": "Collection of permanent memories for Mahiru voice companion"
+    }
+  }
+}
