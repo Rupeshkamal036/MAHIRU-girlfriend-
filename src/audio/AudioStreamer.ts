@@ -11,6 +11,7 @@ export class AudioStreamer {
   private micStream: MediaStream | null = null;
   private micSource: MediaStreamAudioSourceNode | null = null;
   private scriptProcessor: ScriptProcessorNode | null = null;
+  private silentGain: GainNode | null = null;
   private inputAnalyser: AnalyserNode | null = null;
 
   private outputAnalyser: AnalyserNode | null = null;
@@ -18,6 +19,10 @@ export class AudioStreamer {
   private nextPlayTime: number = 0;
   private isMuted: boolean = false;
   private micAvailable: boolean = false;
+
+  // 100ms accumulator buffer: 1600 samples at 16kHz (3200 bytes raw PCM16)
+  private pcmChunkBuffer: Int16Array = new Int16Array(1600);
+  private pcmChunkBufferOffset: number = 0;
 
   private onAudioChunkCallback: ((base64Chunk: string) => void) | null = null;
   private animFrameId: number | null = null;
@@ -36,7 +41,14 @@ export class AudioStreamer {
   }
 
   public async initMicrophone(): Promise<boolean> {
-    if (this.micAvailable && this.micStream) return true;
+    if (this.micAvailable && this.micStream && this.scriptProcessor) {
+      if (this.inputAudioCtx && this.inputAudioCtx.state === 'suspended') {
+        try {
+          await this.inputAudioCtx.resume();
+        } catch {}
+      }
+      return true;
+    }
 
     if (!navigator || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       const err = new Error(
@@ -71,13 +83,17 @@ export class AudioStreamer {
 
     this.micStream = stream;
 
-    // Initialize input AudioContext
+    // Ensure input AudioContext is instantiated and active
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     if (!this.inputAudioCtx) {
       this.inputAudioCtx = new AudioContextClass();
     }
     if (this.inputAudioCtx.state === 'suspended') {
-      await this.inputAudioCtx.resume();
+      try {
+        await this.inputAudioCtx.resume();
+      } catch (err) {
+        console.log('[AudioStreamer] inputAudioCtx resume notice:', err);
+      }
     }
 
     this.inputAnalyser = this.inputAudioCtx.createAnalyser();
@@ -88,6 +104,14 @@ export class AudioStreamer {
 
     const bufferSize = 2048;
     this.scriptProcessor = this.inputAudioCtx.createScriptProcessor(bufferSize, 1, 1);
+
+    // Retain global reference to avoid Chromium GC bug (#82795) unhooking onaudioprocess
+    try {
+      (window as any).__mahiru_audio_processor = this.scriptProcessor;
+    } catch {}
+
+    // Reset 100ms accumulator buffer
+    this.pcmChunkBufferOffset = 0;
 
     this.scriptProcessor.onaudioprocess = (event: AudioProcessingEvent) => {
       if (this.isMuted) return;
@@ -101,27 +125,48 @@ export class AudioStreamer {
 
       // Convert Float32 [-1, 1] to Int16 PCM little endian
       const pcm16 = this.floatTo16BitPCM(downsampled);
-      const base64Audio = this.arrayBufferToBase64(pcm16.buffer);
 
-      if (this.onAudioChunkCallback && base64Audio) {
-        this.onAudioChunkCallback(base64Audio);
+      // Accumulate into 100ms (1600 samples) chunk buffer for clean Gemini Live VAD framing
+      for (let i = 0; i < pcm16.length; i++) {
+        this.pcmChunkBuffer[this.pcmChunkBufferOffset++] = pcm16[i];
+        if (this.pcmChunkBufferOffset >= this.pcmChunkBuffer.length) {
+          const base64Audio = this.arrayBufferToBase64(this.pcmChunkBuffer.buffer);
+          if (this.onAudioChunkCallback && base64Audio) {
+            this.onAudioChunkCallback(base64Audio);
+          }
+          this.pcmChunkBufferOffset = 0;
+        }
       }
     };
 
     // Connect processor to destination (silent feedback loop required for script processor to fire)
-    const silentGain = this.inputAudioCtx.createGain();
-    silentGain.gain.value = 0;
+    // Retain silentGain as an instance property to prevent V8 garbage-collection from severing destination
+    this.silentGain = this.inputAudioCtx.createGain();
+    this.silentGain.gain.value = 0;
     this.micSource.connect(this.scriptProcessor);
-    this.scriptProcessor.connect(silentGain);
-    silentGain.connect(this.inputAudioCtx.destination);
+    this.scriptProcessor.connect(this.silentGain);
+    this.silentGain.connect(this.inputAudioCtx.destination);
 
     this.micAvailable = true;
     return true;
   }
 
   public async start(): Promise<{ micAvailable: boolean; micError?: string }> {
-    // 1. Initialize output AudioContext (24kHz for Gemini Live model output)
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+
+    // 1. Initialize input AudioContext synchronously during user gesture
+    if (!this.inputAudioCtx) {
+      this.inputAudioCtx = new AudioContextClass();
+    }
+    if (this.inputAudioCtx.state === 'suspended') {
+      try {
+        await this.inputAudioCtx.resume();
+      } catch (err) {
+        console.log('[AudioStreamer] Synchronous inputAudioCtx resume notice:', err);
+      }
+    }
+
+    // 2. Initialize output AudioContext (24kHz for Gemini Live model output)
     try {
       this.outputAudioCtx = new AudioContextClass({ sampleRate: 24000 });
     } catch {
@@ -130,7 +175,11 @@ export class AudioStreamer {
     }
 
     if (this.outputAudioCtx.state === 'suspended') {
-      await this.outputAudioCtx.resume();
+      try {
+        await this.outputAudioCtx.resume();
+      } catch (err) {
+        console.log('[AudioStreamer] outputAudioCtx resume notice:', err);
+      }
     }
 
     this.outputAnalyser = this.outputAudioCtx.createAnalyser();
@@ -138,7 +187,7 @@ export class AudioStreamer {
     this.outputAnalyser.connect(this.outputAudioCtx.destination);
     this.nextPlayTime = this.outputAudioCtx.currentTime;
 
-    // 2. Attempt microphone access (graceful non-fatal fallback if blocked or restricted)
+    // 3. Attempt microphone access (graceful non-fatal fallback if blocked or restricted)
     let micErrorMsg: string | undefined;
     try {
       await this.initMicrophone();
@@ -149,7 +198,7 @@ export class AudioStreamer {
       micErrorMsg = err?.message || 'Permission denied';
     }
 
-    // 3. Start visualizer loop
+    // 4. Start visualizer loop
     this.startVisualizerLoop();
 
     return {
@@ -359,11 +408,24 @@ export class AudioStreamer {
 
     this.interrupt();
 
+    if (this.silentGain) {
+      try {
+        this.silentGain.disconnect();
+      } catch {}
+      this.silentGain = null;
+    }
+
     if (this.scriptProcessor) {
-      this.scriptProcessor.disconnect();
-      this.scriptProcessor.onaudioprocess = null;
+      try {
+        this.scriptProcessor.disconnect();
+        this.scriptProcessor.onaudioprocess = null;
+      } catch {}
       this.scriptProcessor = null;
     }
+
+    try {
+      delete (window as any).__mahiru_audio_processor;
+    } catch {}
 
     if (this.micSource) {
       this.micSource.disconnect();

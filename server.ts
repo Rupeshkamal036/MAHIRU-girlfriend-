@@ -1447,6 +1447,18 @@ You are the user's cute, sweet, and deeply caring AI girlfriend:
                       },
                       broadcastMemoryEvent
                     );
+                    if (toggleResult.success) {
+                      try {
+                        clientWs.send(
+                          JSON.stringify({
+                            type: 'securityChanged',
+                            enabled: toggleResult.status === 'enabled',
+                            status: toggleResult.securityStatus,
+                            sessionId: wsSessionId,
+                          })
+                        );
+                      } catch {}
+                    }
                     serverResponses.push({
                       id: callId,
                       name: fc.name,
@@ -1586,12 +1598,16 @@ You are the user's cute, sweet, and deeply caring AI girlfriend:
 
           if (payload.type === 'audio' && payload.data) {
             // Forward 16kHz PCM audio chunk to Gemini (strictly audio forwarding, never memory extraction)
-            liveSession.sendRealtimeInput({
-              audio: {
-                data: payload.data,
-                mimeType: 'audio/pcm;rate=16000',
-              },
-            });
+            try {
+              liveSession.sendRealtimeInput({
+                audio: {
+                  data: payload.data,
+                  mimeType: 'audio/pcm;rate=16000',
+                },
+              });
+            } catch (audioForwardErr) {
+              console.error('[Live Gateway] Error forwarding audio to Gemini Live:', audioForwardErr);
+            }
           } else if (payload.type === 'text' && payload.text) {
             const isSensitiveText = containsSensitiveCredentials(String(payload.text));
             console.log('[Live Gateway] Forwarding text prompt to Gemini Live:', isSensitiveText ? '[REDACTED CREDENTIAL]' : payload.text);

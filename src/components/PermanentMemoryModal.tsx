@@ -191,6 +191,11 @@ export const PermanentMemoryModal: React.FC<PermanentMemoryModalProps> = ({
       const data = await res.json();
       if (data.success && typeof data.automaticMemorySaving === 'boolean') {
         setIsAutoMemorySaving(data.automaticMemorySaving);
+        window.dispatchEvent(
+          new CustomEvent('mahiru:memory-saving-changed', {
+            detail: { enabled: data.automaticMemorySaving },
+          })
+        );
       }
     } catch (err) {
       console.warn('[PermanentMemoryModal] Toggle automatic memory saving failed:', err);
@@ -708,6 +713,11 @@ export const PermanentMemoryModal: React.FC<PermanentMemoryModalProps> = ({
         throw new Error(data.error || 'Failed to toggle security');
       }
       resetSecurityView(`Memory security turned ${targetState ? 'ON' : 'OFF'}!`);
+      window.dispatchEvent(
+        new CustomEvent('mahiru:security-changed', {
+          detail: { enabled: targetState },
+        })
+      );
     } catch (err: any) {
       setSecurityError(err.message || 'Error changing security state');
     } finally {

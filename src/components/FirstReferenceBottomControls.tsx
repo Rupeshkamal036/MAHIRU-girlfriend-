@@ -53,15 +53,36 @@ export const FirstReferenceBottomControls: React.FC<FirstReferenceBottomControls
     actionTimerRef.current = setTimeout(() => {
       setActionStatus(null);
       actionTimerRef.current = null;
-    }, 3000);
+    }, 3500);
   };
 
   useEffect(() => {
+    const parseEnabled = (data: any): boolean | null => {
+      if (data === undefined || data === null) return null;
+      const d = data?.detail ? data.detail : data;
+      if (d?.isInit) return null;
+      if (typeof d === 'boolean') return d;
+      if (typeof d?.enabled === 'boolean') return d.enabled;
+      if (typeof d?.isEnabled === 'boolean') return d.isEnabled;
+      if (typeof d?.automaticMemorySaving === 'boolean') return d.automaticMemorySaving;
+      if (typeof d?.status?.isEnabled === 'boolean') return d.status.isEnabled;
+      if (typeof d?.securityStatus?.isEnabled === 'boolean') return d.securityStatus.isEnabled;
+      if (d?.status === 'enabled' || d?.status === 'active') return true;
+      if (d?.status === 'disabled' || d?.status === 'inactive') return false;
+      if (d?.action === 'enable' || d?.action === 'on') return true;
+      if (d?.action === 'disable' || d?.action === 'off') return false;
+      if (d?.state === 'on') return true;
+      if (d?.state === 'off') return false;
+      if (d?.enabled === 'true' || d?.isEnabled === 'true') return true;
+      if (d?.enabled === 'false' || d?.isEnabled === 'false') return false;
+      return null;
+    };
+
     // 1. Listen for Memory Saving changes from WebSocket / API
     const handleMemorySavingChanged = (e: any) => {
-      if (e?.detail?.isInit) return;
-      const enabled = e?.detail?.enabled ?? e?.detail?.automaticMemorySaving;
-      if (typeof enabled !== 'boolean') return;
+      const d = e?.detail?.detail ? e.detail.detail : e?.detail;
+      const enabled = parseEnabled(d);
+      if (enabled === null) return;
 
       displayActionStatus({
         line1: 'MEMORY SAVING',
@@ -72,14 +93,8 @@ export const FirstReferenceBottomControls: React.FC<FirstReferenceBottomControls
 
     // 2. Listen for Security changes from WebSocket / API
     const handleSecurityChanged = (e: any) => {
-      if (e?.detail?.isInit) return;
-      const enabled =
-        typeof e?.detail?.enabled === 'boolean'
-          ? e.detail.enabled
-          : typeof e?.detail?.status?.isEnabled === 'boolean'
-          ? e.detail.status.isEnabled
-          : null;
-
+      const d = e?.detail?.detail ? e.detail.detail : e?.detail;
+      const enabled = parseEnabled(d);
       if (enabled === null) return;
 
       displayActionStatus({
@@ -91,11 +106,12 @@ export const FirstReferenceBottomControls: React.FC<FirstReferenceBottomControls
 
     // 3. Listen for direct / custom action status events
     const handleCustomAction = (e: any) => {
-      if (e?.detail?.title && e?.detail?.description) {
+      const d = e?.detail?.detail ? e.detail.detail : e?.detail;
+      if (d?.title && d?.description) {
         displayActionStatus({
-          line1: String(e.detail.title).toUpperCase(),
-          line2: String(e.detail.description),
-          state: e.detail.state || 'success',
+          line1: String(d.title).toUpperCase(),
+          line2: String(d.description),
+          state: d.state || 'success',
         });
       }
     };
@@ -153,23 +169,23 @@ export const FirstReferenceBottomControls: React.FC<FirstReferenceBottomControls
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-col items-center justify-center leading-snug"
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+              className="flex flex-col items-center justify-center leading-tight text-center select-none"
             >
               <span
                 className={`text-[11px] sm:text-xs font-semibold tracking-[0.2em] uppercase font-['Outfit'] ${
                   actionStatus.state === 'off'
-                    ? 'text-rose-300 drop-shadow-[0_0_12px_rgba(244,63,94,0.7)]'
-                    : 'text-cyan-300 drop-shadow-[0_0_12px_rgba(6,182,212,0.7)]'
+                    ? 'text-rose-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] drop-shadow-[0_0_10px_rgba(244,63,94,0.5)]'
+                    : 'text-emerald-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] drop-shadow-[0_0_10px_rgba(52,211,153,0.5)]'
                 }`}
               >
                 {actionStatus.line1}
               </span>
               <span
-                className={`text-[11px] sm:text-xs font-semibold tracking-[0.2em] uppercase font-['Outfit'] mt-0.5 ${
+                className={`text-[11px] sm:text-xs font-semibold tracking-[0.2em] font-['Outfit'] mt-0.5 ${
                   actionStatus.state === 'off'
-                    ? 'text-rose-200 drop-shadow-[0_0_12px_rgba(244,63,94,0.6)]'
-                    : 'text-cyan-200 drop-shadow-[0_0_12px_rgba(6,182,212,0.6)]'
+                    ? 'text-rose-300 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] drop-shadow-[0_0_10px_rgba(244,63,94,0.4)]'
+                    : 'text-emerald-200 drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] drop-shadow-[0_0_10px_rgba(52,211,153,0.4)]'
                 }`}
               >
                 {actionStatus.line2}

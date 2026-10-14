@@ -24,6 +24,7 @@ export class LiveSession {
   private speakingTimeout: any = null;
   private pingInterval: any = null;
   private isDisconnecting: boolean = false;
+  private currentAudioSessionId: number = 0;
 
   constructor(callbacks: LiveSessionCallbacks) {
     this.callbacks = callbacks;
@@ -40,32 +41,25 @@ export class LiveSession {
     this.setState('connecting');
 
     try {
-      // 1. Initialize audio capture and playback streamer
+      // 1. Initialize audio capture and playback streamer with authoritative lifecycle callbacks
       this.streamer = new AudioStreamer(
         (base64Chunk: string) => {
           this.sendAudioChunk(base64Chunk);
         },
         (userVol, aiVol, freqs) => {
+          // Visualizer loop update only - polling for audio state completion is removed
           this.callbacks.onVisualizerUpdate(userVol, aiVol, freqs);
-
-          // Update state to speaking or listening dynamically based on active audio source
-          if (this.state !== 'connecting' && this.state !== 'disconnected') {
-            if (this.streamer?.isPlaying()) {
-              if (this.state !== 'speaking') {
-                this.setState('speaking');
-              }
-            } else if (this.state === 'speaking') {
-              // Grace period before reverting to listening
-              if (!this.speakingTimeout) {
-                this.speakingTimeout = setTimeout(() => {
-                  if (!this.streamer?.isPlaying() && this.state === 'speaking') {
-                    this.setState('listening');
-                  }
-                  this.speakingTimeout = null;
-                }, 300);
-              }
-            }
-          }
+        },
+        {
+          onPlaybackStart: (sessionId: number) => {
+            this.handlePlaybackStart(sessionId);
+          },
+          onPlaybackDrained: (sessionId: number) => {
+            this.handlePlaybackDrained(sessionId);
+          },
+          onPlaybackInterrupted: (sessionId: number) => {
+            this.handlePlaybackInterrupted(sessionId);
+          },
         }
       );
 
@@ -161,6 +155,7 @@ export class LiveSession {
 
   public disconnect(): void {
     this.isDisconnecting = true;
+    this.currentAudioSessionId = 0;
 
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
@@ -209,6 +204,11 @@ export class LiveSession {
     if (this.streamer) {
       this.streamer.interrupt();
     }
+    this.currentAudioSessionId = 0;
+    if (this.speakingTimeout) {
+      clearTimeout(this.speakingTimeout);
+      this.speakingTimeout = null;
+    }
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       // Send interrupt signal to server
       this.ws.send(JSON.stringify({ type: 'interrupt' }));
@@ -222,7 +222,6 @@ export class LiveSession {
       return;
     }
     this.ws.send(JSON.stringify({ type: 'text', text }));
-    this.setState('speaking');
   }
 
   public sendUserTurn(text: string): void {
@@ -279,12 +278,52 @@ export class LiveSession {
     }
   }
 
+  private handlePlaybackStart(sessionId: number): void {
+    this.currentAudioSessionId = sessionId;
+    if (this.speakingTimeout) {
+      clearTimeout(this.speakingTimeout);
+      this.speakingTimeout = null;
+    }
+    if (this.state !== 'connecting' && this.state !== 'disconnected') {
+      this.setState('speaking');
+    }
+  }
+
+  private handlePlaybackDrained(sessionId: number): void {
+    if (this.currentAudioSessionId !== sessionId) {
+      return; // Stale callback from interrupted or older session
+    }
+    if (this.speakingTimeout) {
+      clearTimeout(this.speakingTimeout);
+      this.speakingTimeout = null;
+    }
+    if (this.state === 'speaking') {
+      this.setState('listening');
+    }
+  }
+
+  private handlePlaybackInterrupted(sessionId: number): void {
+    if (this.currentAudioSessionId === sessionId) {
+      this.currentAudioSessionId = 0;
+    }
+    if (this.speakingTimeout) {
+      clearTimeout(this.speakingTimeout);
+      this.speakingTimeout = null;
+    }
+    if (this.state === 'speaking') {
+      this.setState('listening');
+    }
+  }
+
   private handleServerMessage(msg: any): void {
     switch (msg.type) {
       case 'audio':
         if (msg.data && this.streamer) {
+          if (this.speakingTimeout) {
+            clearTimeout(this.speakingTimeout);
+            this.speakingTimeout = null;
+          }
           this.streamer.playChunk(msg.data);
-          this.setState('speaking');
         }
         break;
 
@@ -292,6 +331,11 @@ export class LiveSession {
         console.log('[LiveSession] Interrupted by model or user');
         if (this.streamer) {
           this.streamer.interrupt();
+        }
+        this.currentAudioSessionId = 0;
+        if (this.speakingTimeout) {
+          clearTimeout(this.speakingTimeout);
+          this.speakingTimeout = null;
         }
         this.setState('listening');
         if (this.callbacks.onInterrupted) {
