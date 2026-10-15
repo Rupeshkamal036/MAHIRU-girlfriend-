@@ -1,11 +1,10 @@
 import React, { useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Camera, Image as ImageIcon, FileText, Sparkles, X } from 'lucide-react';
+import { Image, FileText, X, Upload } from 'lucide-react';
 
 interface MediaAttachModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onFileSelect?: (file: File, type: string) => void;
+  onFileSelect: (file: File, type: string) => void;
 }
 
 export const MediaAttachModal: React.FC<MediaAttachModalProps> = ({
@@ -14,124 +13,74 @@ export const MediaAttachModal: React.FC<MediaAttachModalProps> = ({
   onFileSelect,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
-  const handleTriggerUpload = (isCamera: boolean) => {
-    if (isCamera && cameraInputRef.current) {
-      cameraInputRef.current.click();
-    } else if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
-
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: string) => {
     const file = e.target.files?.[0];
-    if (file && onFileSelect) {
+    if (file) {
       onFileSelect(file, type);
+      onClose();
     }
-    onClose();
   };
 
   return (
-    <AnimatePresence>
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      >
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9, y: 10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.9, y: 10 }}
-          onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-xs bg-[#0f111a] border border-cyan-500/30 rounded-2xl p-4 text-neutral-100 shadow-[0_15px_40px_rgba(0,0,0,0.8)]"
-        >
-          {/* Hidden file inputs */}
-          <input
-            ref={cameraInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={(e) => handleFileChange(e, 'camera')}
-          />
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,application/pdf,text/*"
-            className="hidden"
-            onChange={(e) => handleFileChange(e, 'gallery')}
-          />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="relative w-full max-w-sm rounded-3xl bg-neutral-900/90 border border-white/10 p-5 shadow-2xl backdrop-blur-xl">
+        <div className="flex items-center justify-between pb-3 border-b border-white/10">
+          <div className="flex items-center gap-2">
+            <Upload className="w-5 h-5 text-pink-400" />
+            <h3 className="font-bold text-white text-base font-['Syne']">Attach Media</h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
-          {/* Header */}
-          <div className="flex items-center justify-between pb-2.5 border-b border-white/10 mb-2.5">
-            <div className="flex items-center gap-1.5 text-xs font-bold tracking-wider text-cyan-300 uppercase">
-              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-              ATTACH CONTENT
+        <div className="py-4 space-y-3">
+          <label className="flex items-center gap-3 p-3.5 rounded-2xl bg-white/5 border border-white/5 hover:border-pink-500/30 hover:bg-pink-500/5 cursor-pointer transition-all">
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => handleFileChange(e, 'image')}
+            />
+            <div className="p-2.5 rounded-xl bg-pink-500/10 text-pink-400">
+              <Image className="w-5 h-5" />
             </div>
-            <button
-              onClick={onClose}
-              className="p-1 text-neutral-400 hover:text-white transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+            <div>
+              <p className="text-xs font-semibold text-white">Attach Photo / Image</p>
+              <p className="text-[11px] text-neutral-400">Mahiru will analyze the photo visually</p>
+            </div>
+          </label>
 
-          {/* Options */}
-          <div className="space-y-1.5">
-            <button
-              onClick={() => handleTriggerUpload(true)}
-              className="w-full p-2.5 rounded-xl bg-white/[0.03] hover:bg-cyan-500/10 border border-white/5 hover:border-cyan-500/30 flex items-center gap-3 transition-all text-left group"
-            >
-              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 group-hover:scale-105 transition-transform">
-                <Camera className="w-4 h-4" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-white group-hover:text-cyan-300 transition-colors">
-                  Camera
-                </p>
-                <p className="text-[10px] text-neutral-400">Take a photo to analyze</p>
-              </div>
-            </button>
+          <label className="flex items-center gap-3 p-3.5 rounded-2xl bg-white/5 border border-white/5 hover:border-cyan-500/30 hover:bg-cyan-500/5 cursor-pointer transition-all">
+            <input
+              type="file"
+              accept=".txt,.md,.json,.csv"
+              className="hidden"
+              onChange={(e) => handleFileChange(e, 'document')}
+            />
+            <div className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400">
+              <FileText className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-white">Attach Text / Notes</p>
+              <p className="text-[11px] text-neutral-400">Read and discuss text documents</p>
+            </div>
+          </label>
+        </div>
 
-            <button
-              onClick={() => handleTriggerUpload(false)}
-              className="w-full p-2.5 rounded-xl bg-white/[0.03] hover:bg-cyan-500/10 border border-white/5 hover:border-cyan-500/30 flex items-center gap-3 transition-all text-left group"
-            >
-              <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 group-hover:scale-105 transition-transform">
-                <ImageIcon className="w-4 h-4" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-white group-hover:text-cyan-300 transition-colors">
-                  Gallery
-                </p>
-                <p className="text-[10px] text-neutral-400">Choose photo or screenshot</p>
-              </div>
-            </button>
-
-            <button
-              onClick={() => handleTriggerUpload(false)}
-              className="w-full p-2.5 rounded-xl bg-white/[0.03] hover:bg-cyan-500/10 border border-white/5 hover:border-cyan-500/30 flex items-center gap-3 transition-all text-left group"
-            >
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 group-hover:scale-105 transition-transform">
-                <FileText className="w-4 h-4" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-white group-hover:text-cyan-300 transition-colors">
-                  Documents
-                </p>
-                <p className="text-[10px] text-neutral-400">PDF, text & files</p>
-              </div>
-            </button>
-          </div>
-
-          {/* Bottom helper text */}
-          <p className="mt-3 text-[10px] text-neutral-400 text-center font-mono">
-            Mahiru will analyze via voice or vision
-          </p>
-        </motion.div>
+        <button
+          onClick={onClose}
+          className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-colors"
+        >
+          Cancel
+        </button>
       </div>
-    </AnimatePresence>
+    </div>
   );
 };

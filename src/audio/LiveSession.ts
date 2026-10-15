@@ -16,6 +16,78 @@ export interface LiveSessionCallbacks {
   onMemoryPersisted?: (data: { userTurn: string; persistedCount: number; duplicateCount: number; results: any[] }) => void;
 }
 
+function normalizeInstagramUrl(rawUrl: string): string {
+  if (typeof rawUrl !== 'string') return rawUrl;
+  try {
+    const parsed = new URL(rawUrl);
+    const host = parsed.hostname.toLowerCase();
+    if (host !== 'instagram.com' && !host.endsWith('.instagram.com')) {
+      return rawUrl;
+    }
+
+    let result = rawUrl;
+    const pathname = parsed.pathname;
+
+    if (pathname.startsWith('/search') || pathname.startsWith('/explore/search')) {
+      let rawText =
+        parsed.searchParams.get('q') ||
+        parsed.searchParams.get('query') ||
+        parsed.searchParams.get('keyword') ||
+        '';
+      if (rawText && /%[0-9a-fA-F]{2}/.test(rawText)) {
+        try {
+          rawText = decodeURIComponent(rawText);
+        } catch {
+          // ignore
+        }
+      }
+      const text = rawText.trim();
+      if (text) {
+        result = 'https://www.google.com/search?q=' + encodeURIComponent('site:instagram.com ' + text);
+      } else {
+        result = 'https://www.instagram.com/';
+      }
+    } else {
+      if (pathname === '/' || pathname === '') {
+        return rawUrl;
+      }
+      const segments = pathname.split('/').filter(Boolean);
+      if (segments.length === 0) {
+        return rawUrl;
+      }
+
+      let firstSegment = segments[0];
+      try {
+        firstSegment = decodeURIComponent(firstSegment);
+      } catch {
+        // ignore
+      }
+
+      if (firstSegment.startsWith('@')) {
+        const handle = firstSegment.slice(1);
+        if (/^[A-Za-z0-9._]{1,30}$/.test(handle)) {
+          result = 'https://www.instagram.com/' + handle + '/';
+        } else {
+          const text = handle.trim();
+          result = 'https://www.google.com/search?q=' + encodeURIComponent('site:instagram.com ' + text);
+        }
+      } else if (/[^A-Za-z0-9._]|\s/.test(firstSegment)) {
+        const text = firstSegment.trim();
+        result = 'https://www.google.com/search?q=' + encodeURIComponent('site:instagram.com ' + text);
+      } else {
+        return rawUrl;
+      }
+    }
+
+    if (result !== rawUrl) {
+      console.log('[LiveSession] Instagram URL normalized:', rawUrl, '->', result);
+    }
+    return result;
+  } catch {
+    return rawUrl;
+  }
+}
+
 export class LiveSession {
   private ws: WebSocket | null = null;
   private streamer: AudioStreamer | null = null;
@@ -454,7 +526,7 @@ export class LiveSession {
       let result: Record<string, any> = { success: true };
 
       if (funcName === 'openWebsite') {
-        const url = args.url;
+        const url = normalizeInstagramUrl(args.url);
         const siteName = args.siteName || url;
         try {
           // Attempt to open in a new window/tab
