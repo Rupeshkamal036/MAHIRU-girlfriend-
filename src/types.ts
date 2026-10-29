@@ -1,6 +1,6 @@
 export type SessionState = 'disconnected' | 'connecting' | 'listening' | 'speaking';
 
-export type ConversationStyle = 'idle' | 'talking' | 'greeting' | 'explaining';
+export type ConversationStyle = 'greeting' | 'explaining' | 'talking';
 
 export type ReactionType =
   | 'blush'
@@ -13,7 +13,6 @@ export type ReactionType =
   | 'pout'
   | 'happy'
   | 'excited'
-  | 'excited_greeting'
   | 'shy'
   | 'embarrassed'
   | 'surprised'
@@ -24,6 +23,7 @@ export type ReactionType =
   | 'sleepy'
   | 'tired'
   | 'looking_around'
+  | 'excited_greeting'
   | 'sigh'
   | 'taking_a_breath'
   | 'goodbye';
@@ -31,30 +31,60 @@ export type ReactionType =
 export interface ReactionState {
   type: ReactionType;
   comment?: string;
-  timestamp?: number;
+  timestamp: number;
 }
 
 export interface ToolCallData {
-  id: string;
+  id?: string;
   name: string;
-  args?: any;
+  args: Record<string, any>;
+}
+
+export interface ToolResponseData {
+  id?: string;
+  name: string;
+  response: Record<string, any>;
+}
+
+export interface AudioVisualizerData {
+  userVolume: number;    // 0 to 1
+  aiVolume: number;      // 0 to 1
+  frequencies: Uint8Array;
 }
 
 export interface PermissionErrorState {
-  isPermissionError?: boolean;
-  isInIframe?: boolean;
-  message?: string;
+  isPermissionError: boolean;
+  isInIframe: boolean;
+  message: string;
 }
+
+export type AnimationCategory = 'conversation' | 'emotion' | 'movement' | 'idle';
+
+export interface MahiruVideoMeta {
+  id: number;
+  filename: string;
+  title: string;
+  description: string;
+  category: AnimationCategory;
+  isOneShot: boolean;
+  loop: boolean;
+  priority: number;
+  nextDefaultStateId?: number;
+  actionStart?: number; // Exact timestamp (in seconds) where the actual action/movement starts
+}
+
+export type AmbientLightingMode = 'auto' | 'manual';
 
 export interface AmbientLightState {
-  color: string;
-  colorName?: string;
-  primaryGlow?: string;
-  mode: string;
-  hex?: string;
+  mode: AmbientLightingMode;
+  colorName: string;
+  primaryGlow: string;    // CSS rgba or hex
+  secondaryGlow: string;  // CSS rgba or hex
+  accentGlow: string;
+  brightness: number;     // 0.2 to 1.5
+  intensityClass: string;
+  isBreathing: boolean;
 }
-
-export type MemoryPriority = 'HIGH' | 'MEDIUM' | 'LOW';
 
 export type SemanticMemoryCategory =
   | 'personal_profile'
@@ -75,75 +105,88 @@ export type SemanticMemoryCategory =
   | 'important_facts'
   | 'favorites';
 
-export type MemoryCategory = SemanticMemoryCategory | 'USER_PROFILE' | 'PREFERENCES' | 'GOALS_AND_PROJECTS' | 'CONVERSATION' | string;
+export type MemoryCategory =
+  | SemanticMemoryCategory
+  // Backward compatibility legacy categories
+  | 'USER_PROFILE'
+  | 'USER PROFILE'
+  | 'PREFERENCES'
+  | 'GOALS_AND_PROJECTS'
+  | 'CONVERSATION'
+  | 'SYSTEM'
+  | string;
+
+export type MemoryPriority = 'HIGH' | 'MEDIUM' | 'LOW';
 
 export interface MemoryRecord {
   id: string;
-  memoryId?: string;
+  memoryId: string;
   userId: string;
   category: MemoryCategory;
-  semanticCategory?: SemanticMemoryCategory | string;
+  semanticCategory?: MemoryCategory;
   key: string;
   semanticKey?: string;
   value: string;
-  content?: string;
-  priority?: MemoryPriority;
-  importance?: MemoryPriority;
-  retention?: 'PERMANENT' | 'SESSION' | string;
-  source?: string;
-  lastRecalled?: string;
-  isPermanent?: boolean;
+  content: string;
+  priority: MemoryPriority;
+  importance: MemoryPriority;
+  retention: string;
+  source: string;
+  lastRecalled: string;
+  isPermanent: boolean;
   createdAt: number;
   updatedAt: number;
 }
 
 export interface MemoryCandidate {
   category: MemoryCategory;
-  semanticCategory?: SemanticMemoryCategory | string;
+  semanticCategory?: MemoryCategory;
   key: string;
   semanticKey?: string;
   value: string;
-  priority?: MemoryPriority;
-  isExplicitNew?: boolean;
-  confidence?: number;
-  sourceFact?: string;
-  source?: string;
+  confidence: number;
+  source: 'conversation' | string;
   reason?: string;
-  retention?: string;
+  priority?: MemoryPriority;
+  retention?: 'PERMANENT' | 'LONG_TERM' | string;
+  isExplicitNew?: boolean;
 }
 
 export interface MemoryExtractionInput {
-  turnText?: string;
-  text?: string;
-  conversationHistory?: any;
+  text: string;
+  conversationHistory?: Array<{
+    role: 'user' | 'assistant' | 'model';
+    text: string;
+  }>;
+  speaker?: 'user' | 'assistant';
   userId?: string;
-  existingMemories?: MemoryRecord[];
 }
 
 export interface MemoryExtractionResult {
-  inputAnalyzed?: string;
   candidates: MemoryCandidate[];
-  skipped?: boolean;
-  reason?: string;
+  inputAnalyzed: string;
+  extractedCount: number;
+  engine: 'gemini' | 'rule_based' | 'hybrid';
+  timestamp: number;
 }
 
 export interface CandidatePersistenceResult {
   candidate: MemoryCandidate;
-  action: 'created' | 'updated' | 'duplicate_skipped' | 'rejected_sensitive' | 'error';
-  status?: string;
-  decision?: string;
-  message?: string;
+  status: 'created' | 'updated' | 'duplicate' | 'rejected' | 'similar_requires_decision';
+  decision?: 'EXACT_DUPLICATE' | 'NEW_MEMORY' | 'SIMILAR_REQUIRES_USER_DECISION';
   reason?: string;
-  memoryId?: string;
+  message?: string;
+  clarificationPrompt?: string;
   memory?: MemoryRecord;
-  error?: string;
+  existingMemory?: MemoryRecord;
 }
 
 export interface PersistenceBatchResult {
-  userId: string;
-  processedCount: number;
   persistedCount: number;
-  duplicateCount?: number;
-  rejectedCount?: number;
+  duplicateCount: number;
+  rejectedCount: number;
+  similarDecisionCount?: number;
   results: CandidatePersistenceResult[];
 }
+
+

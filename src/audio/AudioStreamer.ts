@@ -30,8 +30,7 @@ export class AudioStreamer {
 
   constructor(
     onAudioChunk: (base64Chunk: string) => void,
-    onVisualizerUpdate?: (userVol: number, aiVol: number, freqs: Uint8Array) => void,
-    _lifecycleCallbacks?: any
+    onVisualizerUpdate?: (userVol: number, aiVol: number, freqs: Uint8Array) => void
   ) {
     this.onAudioChunkCallback = onAudioChunk;
     this.visualizerCallback = onVisualizerUpdate || null;

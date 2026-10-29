@@ -1,5 +1,5 @@
 import React from 'react';
-import { Volume2, Sparkles, Brain, Monitor, ChevronDown } from 'lucide-react';
+import { Compass, Sliders, Atom, Monitor } from 'lucide-react';
 import { SessionState } from '../types';
 
 interface TopBarProps {
@@ -20,52 +20,62 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenScreenShare,
 }) => {
   return (
-    <header className="w-full max-w-5xl mx-auto px-3 sm:px-6 pt-3 pb-2 flex items-center justify-between z-20 shrink-0">
-      {/* Brand title button */}
+    <header className="w-full px-4 sm:px-6 pt-3.5 pb-2 flex items-center justify-between z-30 select-none max-w-5xl mx-auto">
+      {/* Left: M A H I R U • matching Reference 1 */}
       <button
         onClick={onOpenInfo}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 backdrop-blur-md transition-all active:scale-95 group text-left"
+        className="flex items-center gap-2 text-white/90 hover:text-white transition-colors group cursor-pointer"
+        title="Mahiru Core Info"
       >
-        <span className="text-xs sm:text-sm font-bold tracking-wider text-white uppercase font-['Syne']">
+        <span className="text-xs sm:text-sm font-semibold tracking-[0.3em] font-['Outfit'] uppercase text-neutral-200 group-hover:text-white">
           MAHIRU
         </span>
-        <ChevronDown className="w-3.5 h-3.5 text-neutral-400 group-hover:text-white transition-colors" />
+        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
       </button>
 
-      {/* Action links */}
-      <div className="flex items-center gap-1.5 sm:gap-2">
+      {/* Right: Sleek unbordered text buttons matching Reference 1 (TOPICS, AUDIO, RECALLS, SHARE SCREEN) */}
+      <div className="flex items-center gap-3.5 sm:gap-6">
+        {/* TOPICS */}
         <button
           onClick={onOpenTopics}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-semibold text-neutral-300 hover:text-white transition-all active:scale-95"
+          className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-medium tracking-wider text-neutral-400 hover:text-neutral-100 uppercase transition-colors"
+          title="Open Conversation Topics"
         >
-          <Sparkles className="w-3 h-3 text-pink-400" />
-          <span className="hidden sm:inline">TOPICS</span>
+          <Compass className="w-3.5 h-3.5 text-neutral-400 group-hover:text-neutral-200" />
+          <span>TOPICS</span>
         </button>
 
+        {/* AUDIO */}
         <button
           onClick={onOpenAudio}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-semibold text-neutral-300 hover:text-white transition-all active:scale-95"
+          className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-medium tracking-wider text-neutral-400 hover:text-neutral-100 uppercase transition-colors"
+          title="Audio Hardware & Settings"
         >
-          <Volume2 className="w-3 h-3 text-cyan-400" />
-          <span className="hidden sm:inline">AUDIO</span>
+          <Sliders className="w-3.5 h-3.5 text-neutral-400 group-hover:text-cyan-300" />
+          <span>AUDIO</span>
         </button>
 
+        {/* RECALLS */}
         <button
           onClick={onOpenRecalls}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-semibold text-neutral-300 hover:text-white transition-all active:scale-95"
+          className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-medium tracking-wider text-neutral-400 hover:text-neutral-100 uppercase transition-colors"
+          title="Permanent Memory & Recalls"
         >
-          <Brain className="w-3 h-3 text-purple-400" />
-          <span className="hidden sm:inline">RECALLS</span>
+          <Atom className="w-3.5 h-3.5 text-neutral-400 group-hover:text-purple-300" />
+          <span>RECALLS</span>
         </button>
 
+        {/* SHARE SCREEN */}
         <button
           onClick={onOpenScreenShare}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-semibold text-neutral-300 hover:text-white transition-all active:scale-95"
+          className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-medium tracking-wider text-neutral-400 hover:text-neutral-100 uppercase transition-colors"
+          title="Share Screen Vision Link"
         >
-          <Monitor className="w-3 h-3 text-amber-400" />
-          <span className="hidden sm:inline">SHARE</span>
+          <Monitor className="w-3.5 h-3.5 text-neutral-400 group-hover:text-emerald-300" />
+          <span>SHARE SCREEN</span>
         </button>
       </div>
     </header>
   );
 };
+

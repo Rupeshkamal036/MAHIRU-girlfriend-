@@ -1098,7 +1098,7 @@ You are the user's cute, sweet, and deeply caring AI girlfriend:
     - 'exit' (exit / bye / leave)
     - 'look_around' (look around)
     - 'look_toward' (look toward something).
-  - 'openWebsite': Call this when the user asks to open a website or search. For Instagram: Instagram web has NO search URL. Never build instagram.com/search... or instagram.com/explore/search... URLs. If the user says a specific @username or handle, open https://www.instagram.com/<handle>/ (without the @). If the user gives a person's name or any other non-handle text, open https://www.google.com/search?q=site%3Ainstagram.com+<URL-encoded text>. Never guess or invent a username from a person's name. If the user only says to open Instagram, open https://www.instagram.com/. This note applies to Instagram only; other sites are unchanged.
+  - 'openWebsite': Call this when the user asks to open a website or search.
   - 'getDateTime': Call this if the user asks for the time or date.${memoriesSummary}`,
           tools: [
             {

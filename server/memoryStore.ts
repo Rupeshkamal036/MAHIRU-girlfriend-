@@ -1,223 +1,450 @@
-import { getAdminFirestore } from './firebaseAdmin';
-import type { MemoryRecord } from '../src/types';
+import fs from 'fs';
+import path from 'path';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDocs,
+  getDoc,
+  setDoc,
+  deleteDoc,
+  query,
+  where,
+  serverTimestamp,
+  type Firestore,
+} from 'firebase/firestore';
+import type { MemoryCategory, MemoryPriority, MemoryRecord } from '../src/types';
+import { classifyMemorySemantic, isSemanticCategory } from './memoryCategorySchema';
 
-export const DEFAULT_USER_ID = 'default_user';
-
-// Local memory store cache for tests and fallback
-const inMemoryStore = new Map<string, Map<string, MemoryRecord>>();
-
-function getUserStore(userId: string): Map<string, MemoryRecord> {
-  const uid = userId || DEFAULT_USER_ID;
-  if (!inMemoryStore.has(uid)) {
-    inMemoryStore.set(uid, new Map<string, MemoryRecord>());
+let appletConfig: any = {};
+try {
+  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(configPath)) {
+    appletConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
   }
-  return inMemoryStore.get(uid)!;
+} catch (e) {
+  // ignore
 }
 
-export function resolveUserIdFromRequest(req: any): string {
-  const uidHeader = req.headers?.['x-user-id'] || req.headers?.['user-id'];
-  if (uidHeader && typeof uidHeader === 'string' && uidHeader.trim()) {
-    return uidHeader.trim();
+export const TARGET_FIREBASE_PROJECT_ID =
+  appletConfig.projectId ||
+  process.env.FIREBASE_PROJECT_ID ||
+  'mahiru-girlfriend';
+
+export const TARGET_FIRESTORE_DATABASE_ID =
+  appletConfig.firestoreDatabaseId ||
+  process.env.FIREBASE_DATABASE_ID ||
+  'ai-studio-mahirugirlfriend-7a4a6211-3054-4b5b-97be-902107c88ad6';
+
+export const MAHIRU_MEMORIES_COLLECTION = 'mahiru_memories';
+export const DEFAULT_USER_ID = process.env.DEV_USER_ID || 'rupesh-dev';
+
+export class MemoryStoreError extends Error {
+  public code: string;
+  public statusCode: number;
+
+  constructor(code: string, message: string, statusCode = 500) {
+    super(message);
+    this.name = 'MemoryStoreError';
+    this.code = code;
+    this.statusCode = statusCode;
+  }
+}
+
+let firestoreInstance: Firestore | null = null;
+
+/**
+ * Automatically retries transient Firestore network glitches (e.g. UNAVAILABLE, ECONNRESET).
+ */
+async function withFirestoreRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
+  let lastErr: any;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastErr = err;
+      const msg = String(err?.message || '');
+      const code = String(err?.code || '');
+      const isTransient =
+        code === '14' ||
+        code === 'unavailable' ||
+        msg.includes('UNAVAILABLE') ||
+        msg.includes('ECONNRESET') ||
+        msg.includes('ETIMEDOUT') ||
+        msg.includes('socket hang up');
+
+      if (isTransient && attempt < retries) {
+        console.warn(`[MemoryStore] Transient Firestore connection error (${code || msg}), retrying in ${(attempt + 1) * 300}ms...`);
+        await new Promise((res) => setTimeout(res, (attempt + 1) * 300));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
+export function getFirestoreInstance(): Firestore {
+  if (firestoreInstance) return firestoreInstance;
+
+  const app = getApps().length === 0
+    ? initializeApp(appletConfig)
+    : getApp();
+
+  firestoreInstance = getFirestore(app, TARGET_FIRESTORE_DATABASE_ID);
+  console.log(
+    `[MemoryStore] Connected to real Cloud Firestore database [${TARGET_FIRESTORE_DATABASE_ID}] in project [${TARGET_FIREBASE_PROJECT_ID}]`
+  );
+  return firestoreInstance;
+}
+
+export function resolveUserIdFromRequest(req?: {
+  headers?: Record<string, any>;
+  query?: Record<string, any>;
+  user?: { uid?: string };
+}): string {
+  if (req?.user?.uid && typeof req.user.uid === 'string' && req.user.uid.trim()) {
+    return req.user.uid.trim();
+  }
+  if (req?.headers?.['x-user-id'] && typeof req.headers['x-user-id'] === 'string') {
+    return req.headers['x-user-id'].trim();
+  }
+  if (req?.query?.userId && typeof req.query.userId === 'string') {
+    return req.query.userId.trim();
   }
   return DEFAULT_USER_ID;
 }
 
-export async function getMemories(userId: string = DEFAULT_USER_ID): Promise<MemoryRecord[]> {
-  const uid = userId || DEFAULT_USER_ID;
-  const db = getAdminFirestore();
+export interface GetMemoriesOptions {
+  category?: string;
+  limit?: number;
+}
 
-  if (db) {
-    try {
-      const snap = await db
-        .collection('mahiru_memories')
-        .where('userId', '==', uid)
-        .get();
+/**
+ * Retrieves memories for a given user directly from Cloud Firestore.
+ */
+export async function getMemories(
+  userId = DEFAULT_USER_ID,
+  options?: GetMemoriesOptions
+): Promise<MemoryRecord[]> {
+  const effectiveUserId = userId || DEFAULT_USER_ID;
+  const db = getFirestoreInstance();
 
-      const memories: MemoryRecord[] = [];
-      snap.forEach((doc) => {
-        const data = doc.data();
-        memories.push({
-          id: doc.id,
-          memoryId: doc.id,
-          userId: data.userId || uid,
-          category: data.category || 'important_facts',
-          semanticCategory: data.semanticCategory || data.category,
-          key: data.key || 'fact',
-          semanticKey: data.semanticKey || data.key,
-          value: data.value || data.content || '',
-          content: data.content || data.value || '',
-          priority: data.priority || 'HIGH',
-          importance: data.importance || 'HIGH',
-          retention: data.retention || 'PERMANENT',
-          source: data.source || 'CONVERSATION',
-          lastRecalled: data.lastRecalled || 'Recently',
-          isPermanent: data.isPermanent !== false,
-          createdAt: data.createdAt || Date.now(),
-          updatedAt: data.updatedAt || Date.now(),
-        });
+  try {
+    const colRef = collection(db, MAHIRU_MEMORIES_COLLECTION);
+    const q = query(colRef, where('userId', '==', effectiveUserId));
+    const snapshot = await withFirestoreRetry(() => getDocs(q));
+
+    const records: MemoryRecord[] = snapshot.docs.map((docSnap) => {
+      const data = docSnap.data();
+      const createdAtMs =
+        data.createdAtMs ||
+        (data.createdAt?.toMillis ? data.createdAt.toMillis() : null) ||
+        data.createdAt ||
+        Date.now();
+      const updatedAtMs =
+        data.updatedAtMs ||
+        (data.updatedAt?.toMillis ? data.updatedAt.toMillis() : null) ||
+        data.updatedAt ||
+        createdAtMs;
+
+      const content = String(data.value || data.content || '').trim();
+      const priority = (data.priority || data.importance || 'HIGH') as MemoryPriority;
+      const rawCategory = (data.category || 'PREFERENCES') as string;
+      const rawKey = data.key || (content.length > 30 ? content.slice(0, 30) + '...' : content) || 'general';
+
+      const semantic = classifyMemorySemantic({
+        content,
+        key: rawKey,
+        category: rawCategory,
       });
 
-      // Keep in-memory cache synchronized
-      const memMap = getUserStore(uid);
-      memMap.clear();
-      for (const m of memories) {
-        memMap.set(m.id, m);
-      }
+      const effectiveCategory = isSemanticCategory(rawCategory) ? (rawCategory as MemoryCategory) : semantic.category;
+      const effectiveSemanticKey = data.semanticKey || semantic.semanticKey;
 
-      return memories;
-    } catch (err) {
-      console.warn('[MemoryStore] Firestore read error, returning memory cache:', err);
+      return {
+        id: docSnap.id,
+        memoryId: data.memoryId || docSnap.id,
+        userId: data.userId || effectiveUserId,
+        category: effectiveCategory,
+        semanticCategory: effectiveCategory,
+        key: data.key || effectiveSemanticKey,
+        semanticKey: effectiveSemanticKey,
+        value: content,
+        content: content,
+        priority,
+        importance: priority,
+        retention: data.retention || 'PERMANENT',
+        source: data.source || 'ADDED BY USER',
+        lastRecalled: data.lastRecalled || 'Just now',
+        isPermanent: data.isPermanent !== false,
+        createdAt: createdAtMs,
+        updatedAt: updatedAtMs,
+      };
+    });
+
+    records.sort((a, b) => b.createdAt - a.createdAt);
+
+    let result = records;
+    if (options?.category) {
+      result = result.filter(
+        (r) => r.category.toLowerCase() === options.category!.toLowerCase()
+      );
     }
-  }
+    if (options?.limit && options.limit > 0) {
+      result = result.slice(0, options.limit);
+    }
 
-  // Fallback to local cache
-  const memMap = getUserStore(uid);
-  return Array.from(memMap.values());
+    return result;
+  } catch (err: any) {
+    console.error(
+      `[MemoryStore] Direct Firestore query failed on project [${TARGET_FIREBASE_PROJECT_ID}], database [${TARGET_FIRESTORE_DATABASE_ID}]:`,
+      err?.message || err
+    );
+    throw new MemoryStoreError(
+      'FIRESTORE_QUERY_FAILED',
+      `Firestore query failed on project [${TARGET_FIREBASE_PROJECT_ID}], database [${TARGET_FIRESTORE_DATABASE_ID}]: ${err?.message || err}`,
+      500
+    );
+  }
 }
 
-export async function createMemory(
-  recordOrUserId: any,
-  dataIfSeparate?: any
-): Promise<MemoryRecord> {
-  const db = getAdminFirestore();
-  let record: any = {};
-
-  if (typeof recordOrUserId === 'string' && dataIfSeparate) {
-    record = { ...dataIfSeparate, userId: recordOrUserId };
-  } else {
-    record = { ...recordOrUserId };
-  }
-
-  const uid = record.userId || DEFAULT_USER_ID;
-  const memoryId =
-    record.id ||
-    record.memoryId ||
-    `mem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-  const now = Date.now();
-  const fullRecord: MemoryRecord = {
-    id: memoryId,
-    memoryId,
-    userId: uid,
-    category: record.category || 'important_facts',
-    semanticCategory: record.semanticCategory || record.category || 'important_facts',
-    key: record.key || record.semanticKey || 'fact',
-    semanticKey: record.semanticKey || record.key || 'fact',
-    value: record.value || record.content || '',
-    content: record.content || record.value || '',
-    priority: record.priority || 'HIGH',
-    importance: record.importance || 'HIGH',
-    retention: record.retention || 'PERMANENT',
-    source: record.source || 'CONVERSATION',
-    lastRecalled: record.lastRecalled || 'Just now',
-    isPermanent: record.isPermanent !== false,
-    createdAt: record.createdAt || now,
-    updatedAt: now,
-  };
-
-  // Always update in-memory cache
-  getUserStore(uid).set(memoryId, fullRecord);
-
-  if (db) {
-    try {
-      await db.collection('mahiru_memories').doc(memoryId).set(fullRecord);
-    } catch (err) {
-      console.warn('[MemoryStore] Firestore write notice, cached locally:', err);
-    }
-  }
-
-  return fullRecord;
-}
-
-export async function updateMemory(
-  userIdOrId: string,
-  memoryIdOrData: any,
-  dataIfThreeArgs?: any
+/**
+ * Retrieves a single memory record by ID from Cloud Firestore.
+ */
+export async function getMemoryById(
+  userId = DEFAULT_USER_ID,
+  memoryId: string
 ): Promise<MemoryRecord | null> {
-  let uid = DEFAULT_USER_ID;
-  let memId = '';
-  let updates: any = {};
+  if (!memoryId || typeof memoryId !== 'string') return null;
 
-  if (dataIfThreeArgs) {
-    uid = userIdOrId;
-    memId = memoryIdOrData;
-    updates = dataIfThreeArgs;
-  } else {
-    memId = userIdOrId;
-    updates = memoryIdOrData;
-    uid = updates.userId || DEFAULT_USER_ID;
+  const db = getFirestoreInstance();
+  try {
+    const docRef = doc(db, MAHIRU_MEMORIES_COLLECTION, memoryId);
+    const docSnap = await withFirestoreRetry(() => getDoc(docRef));
+    if (!docSnap.exists()) return null;
+
+    const data = docSnap.data();
+    const createdAtMs =
+      data.createdAtMs ||
+      (data.createdAt?.toMillis ? data.createdAt.toMillis() : null) ||
+      data.createdAt ||
+      Date.now();
+    const updatedAtMs =
+      data.updatedAtMs ||
+      (data.updatedAt?.toMillis ? data.updatedAt.toMillis() : null) ||
+      data.updatedAt ||
+      createdAtMs;
+    const content = String(data.value || data.content || '').trim();
+    const rawCategory = (data.category || 'PREFERENCES') as string;
+    const rawKey = data.key || (content.length > 30 ? content.slice(0, 30) + '...' : content) || 'general';
+
+    const semantic = classifyMemorySemantic({
+      content,
+      key: rawKey,
+      category: rawCategory,
+    });
+
+    const effectiveCategory = isSemanticCategory(rawCategory) ? (rawCategory as MemoryCategory) : semantic.category;
+    const effectiveSemanticKey = data.semanticKey || semantic.semanticKey;
+
+    return {
+      id: docSnap.id,
+      memoryId: data.memoryId || docSnap.id,
+      userId: data.userId || userId,
+      category: effectiveCategory,
+      semanticCategory: effectiveCategory,
+      key: data.key || effectiveSemanticKey,
+      semanticKey: effectiveSemanticKey,
+      value: content,
+      content: content,
+      priority: (data.priority || data.importance || 'HIGH') as MemoryPriority,
+      importance: (data.priority || data.importance || 'HIGH') as MemoryPriority,
+      retention: data.retention || 'PERMANENT',
+      source: data.source || 'ADDED BY USER',
+      lastRecalled: data.lastRecalled || 'Just now',
+      isPermanent: data.isPermanent !== false,
+      createdAt: createdAtMs,
+      updatedAt: updatedAtMs,
+    };
+  } catch (err: any) {
+    console.error(
+      `[MemoryStore] Direct Firestore getDoc failed on project [${TARGET_FIREBASE_PROJECT_ID}], database [${TARGET_FIRESTORE_DATABASE_ID}]:`,
+      err?.message || err
+    );
+    throw new MemoryStoreError(
+      'FIRESTORE_GET_FAILED',
+      `Firestore get failed on project [${TARGET_FIREBASE_PROJECT_ID}], database [${TARGET_FIRESTORE_DATABASE_ID}]: ${err?.message || err}`,
+      500
+    );
+  }
+}
+
+/**
+ * Creates or updates a memory record directly in Cloud Firestore.
+ */
+export async function createMemory(
+  userId = DEFAULT_USER_ID,
+  payload: Partial<MemoryRecord>
+): Promise<MemoryRecord> {
+  const effectiveUserId = userId || DEFAULT_USER_ID;
+  const rawContent = payload.content || payload.value;
+  if (!rawContent || !String(rawContent).trim()) {
+    throw new MemoryStoreError('INVALID_PAYLOAD', 'Memory content is required', 400);
   }
 
-  const existing = getUserStore(uid).get(memId);
-  const now = Date.now();
+  const trimmedContent = String(rawContent).trim();
+  const stableId =
+    payload.id || payload.memoryId || `mem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const priority = (payload.priority || payload.importance || 'HIGH') as MemoryPriority;
+  const rawKey = payload.key || (trimmedContent.length > 40 ? trimmedContent.slice(0, 40) + '...' : trimmedContent);
+  const nowMs = Date.now();
 
-  const updated: MemoryRecord = {
-    ...(existing || {
-      id: memId,
-      memoryId: memId,
-      userId: uid,
-      category: 'important_facts',
-      key: 'fact',
-      value: '',
-      createdAt: now,
-    }),
-    ...updates,
-    id: memId,
-    memoryId: memId,
-    updatedAt: now,
+  const semantic = classifyMemorySemantic({
+    content: trimmedContent,
+    key: rawKey,
+    category: payload.category as string,
+  });
+
+  const category = (payload.category && isSemanticCategory(payload.category)
+    ? payload.category
+    : semantic.category) as MemoryCategory;
+  const semanticKey = payload.semanticKey || semantic.semanticKey;
+  const key = payload.key || semanticKey;
+
+  const memoryRecord: MemoryRecord = {
+    id: stableId,
+    memoryId: stableId,
+    userId: effectiveUserId,
+    category,
+    semanticCategory: category,
+    key,
+    semanticKey,
+    value: trimmedContent,
+    content: trimmedContent,
+    priority,
+    importance: priority,
+    retention: payload.retention || 'PERMANENT',
+    source: payload.source || 'ADDED BY USER',
+    lastRecalled: payload.lastRecalled || 'Just now',
+    isPermanent: payload.isPermanent !== false,
+    createdAt: payload.createdAt || nowMs,
+    updatedAt: nowMs,
   };
 
-  getUserStore(uid).set(memId, updated);
+  const db = getFirestoreInstance();
 
-  const db = getAdminFirestore();
-  if (db) {
-    try {
-      await db.collection('mahiru_memories').doc(memId).set(updated, { merge: true });
-    } catch (err) {
-      console.warn('[MemoryStore] Firestore update notice, cached locally:', err);
-    }
+  try {
+    const docRef = doc(db, MAHIRU_MEMORIES_COLLECTION, stableId);
+    await withFirestoreRetry(() =>
+      setDoc(docRef, {
+        ...memoryRecord,
+        createdAtMs: memoryRecord.createdAt,
+        updatedAtMs: memoryRecord.updatedAt,
+        serverCreatedAt: serverTimestamp(),
+        serverUpdatedAt: serverTimestamp(),
+      })
+    );
+
+    console.log(
+      `[MemoryStore] Successfully persisted memory in Cloud Firestore [${stableId}] in database [${TARGET_FIRESTORE_DATABASE_ID}] (project: ${TARGET_FIREBASE_PROJECT_ID})`
+    );
+
+    return memoryRecord;
+  } catch (err: any) {
+    console.error(
+      `[MemoryStore] Direct Firestore write failed on project [${TARGET_FIREBASE_PROJECT_ID}], database [${TARGET_FIRESTORE_DATABASE_ID}]:`,
+      err?.message || err
+    );
+    throw new MemoryStoreError(
+      'FIRESTORE_WRITE_FAILED',
+      `Firestore write failed on project [${TARGET_FIREBASE_PROJECT_ID}], database [${TARGET_FIRESTORE_DATABASE_ID}]: ${err?.message || err}`,
+      500
+    );
   }
-
-  return updated;
 }
 
+/**
+ * Updates an existing memory record in Cloud Firestore.
+ */
+export async function updateMemory(
+  userId = DEFAULT_USER_ID,
+  memoryId: string,
+  updates: Partial<MemoryRecord>
+): Promise<MemoryRecord | null> {
+  if (!memoryId || typeof memoryId !== 'string') {
+    throw new MemoryStoreError('INVALID_MEMORY_ID', 'Memory ID is required', 400);
+  }
+
+  const existing = await getMemoryById(userId, memoryId);
+  if (!existing) {
+    return null;
+  }
+
+  const updatedPayload: Partial<MemoryRecord> = {
+    ...existing,
+    ...updates,
+    id: existing.id,
+    memoryId: existing.memoryId,
+    userId: existing.userId,
+    updatedAt: Date.now(),
+  };
+
+  return createMemory(userId, updatedPayload);
+}
+
+/**
+ * Deletes a memory record by ID directly from Cloud Firestore.
+ */
 export async function deleteMemory(
-  userIdOrId: string,
-  idIfSeparate?: string
+  userId = DEFAULT_USER_ID,
+  memoryId: string
 ): Promise<boolean> {
-  let uid = DEFAULT_USER_ID;
-  let memId = '';
-
-  if (idIfSeparate) {
-    uid = userIdOrId;
-    memId = idIfSeparate;
-  } else {
-    memId = userIdOrId;
+  if (!memoryId || typeof memoryId !== 'string') {
+    throw new MemoryStoreError('INVALID_MEMORY_ID', 'Memory ID is required for deletion', 400);
   }
 
-  getUserStore(uid).delete(memId);
+  const db = getFirestoreInstance();
 
-  const db = getAdminFirestore();
-  if (db) {
-    try {
-      await db.collection('mahiru_memories').doc(memId).delete();
-      return true;
-    } catch (err) {
-      console.warn('[MemoryStore] Firestore delete notice, removed locally:', err);
+  try {
+    const docRef = doc(db, MAHIRU_MEMORIES_COLLECTION, memoryId);
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) {
+      console.log(`[MemoryStore] Memory [${memoryId}] not found in Firestore for deletion`);
+      return false;
     }
-  }
 
-  return true;
+    const data = snap.data();
+    if (data.userId && data.userId !== userId) {
+      console.warn(`[MemoryStore] Unauthorized delete attempt on [${memoryId}] by user [${userId}]`);
+      throw new MemoryStoreError('UNAUTHORIZED', 'Access denied to this memory', 403);
+    }
+
+    await withFirestoreRetry(() => deleteDoc(docRef));
+
+    console.log(
+      `[MemoryStore] Successfully deleted memory from Cloud Firestore [${memoryId}] in database [${TARGET_FIRESTORE_DATABASE_ID}] (project: ${TARGET_FIREBASE_PROJECT_ID})`
+    );
+
+    return true;
+  } catch (err: any) {
+    console.error(
+      `[MemoryStore] Direct Firestore delete failed on project [${TARGET_FIREBASE_PROJECT_ID}], database [${TARGET_FIRESTORE_DATABASE_ID}]:`,
+      err?.message || err
+    );
+    throw new MemoryStoreError(
+      'FIRESTORE_DELETE_FAILED',
+      `Firestore delete failed on project [${TARGET_FIREBASE_PROJECT_ID}], database [${TARGET_FIRESTORE_DATABASE_ID}]: ${err?.message || err}`,
+      500
+    );
+  }
 }
 
-export function getMemoryStoreHealth(): {
-  status: string;
-  backend: string;
-  cachedUsers: number;
-} {
+export function getMemoryStoreHealth() {
   return {
-    status: 'healthy',
-    backend: getAdminFirestore() ? 'cloud_firestore' : 'in_memory_cache',
-    cachedUsers: inMemoryStore.size,
+    targetProjectId: TARGET_FIREBASE_PROJECT_ID,
+    targetDatabaseId: TARGET_FIRESTORE_DATABASE_ID,
+    firestoreReady: true,
   };
 }
