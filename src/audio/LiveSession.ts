@@ -16,6 +16,82 @@ export interface LiveSessionCallbacks {
   onMemoryPersisted?: (data: { userTurn: string; persistedCount: number; duplicateCount: number; results: any[] }) => void;
 }
 
+export function normalizeInstagramUrl(rawUrl: string): string {
+  if (typeof rawUrl !== 'string') return rawUrl;
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return rawUrl;
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  if (host !== 'instagram.com' && host !== 'www.instagram.com' && host !== 'm.instagram.com') {
+    return rawUrl;
+  }
+
+  const safeDecode = (value: string): string => {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  };
+
+  const decodeSearchText = (value: string): string => {
+    let decoded = safeDecode(value);
+    if (/%25|%20/i.test(decoded)) {
+      decoded = safeDecode(decoded);
+    }
+    return decoded.trim();
+  };
+
+  const handleRegex = /^[A-Za-z0-9._]{1,30}$/;
+  const reservedSegments = new Set([
+    'p',
+    'reel',
+    'reels',
+    'explore',
+    'accounts',
+    'stories',
+    'direct',
+    'tv',
+    'about',
+  ]);
+
+  const lowerPath = parsed.pathname.toLowerCase();
+  if (
+    lowerPath === '/search' ||
+    lowerPath.startsWith('/search/') ||
+    lowerPath === '/explore/search' ||
+    lowerPath.startsWith('/explore/search/')
+  ) {
+    const text = decodeSearchText(parsed.searchParams.get('q') ?? '');
+    if (!text) {
+      return 'https://www.instagram.com/';
+    }
+    const handleCandidate = text.startsWith('@') ? text.slice(1).trim() : text;
+    if (handleRegex.test(handleCandidate)) {
+      return `https://www.instagram.com/${handleCandidate}/`;
+    }
+    return `https://www.google.com/search?q=${encodeURIComponent(`site:instagram.com ${text}`)}`;
+  }
+
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  if (segments.length === 1) {
+    const segment = decodeSearchText(segments[0]);
+    if (
+      segment &&
+      !handleRegex.test(segment) &&
+      !reservedSegments.has(segment.toLowerCase())
+    ) {
+      return `https://www.google.com/search?q=${encodeURIComponent(`site:instagram.com ${segment}`)}`;
+    }
+  }
+
+  return rawUrl;
+}
+
 export class LiveSession {
   private ws: WebSocket | null = null;
   private streamer: AudioStreamer | null = null;
@@ -454,7 +530,11 @@ export class LiveSession {
       let result: Record<string, any> = { success: true };
 
       if (funcName === 'openWebsite') {
-        const url = args.url;
+        const rawUrl = args.url;
+        const url = normalizeInstagramUrl(rawUrl);
+        if (url !== rawUrl) {
+          console.log('[LiveSession] Instagram URL normalized:', rawUrl, '->', url);
+        }
         const siteName = args.siteName || url;
         try {
           // Attempt to open in a new window/tab
