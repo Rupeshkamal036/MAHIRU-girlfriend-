@@ -538,12 +538,12 @@ export class LiveSession {
         const siteName = args.siteName || url;
         try {
           // Attempt to open in a new window/tab
-          const opened = window.open(url, '_blank', 'noopener,noreferrer');
+          window.open(url, '_blank', 'noopener,noreferrer');
           result = {
-            status: opened ? 'opened' : 'blocked_by_browser',
+            status: 'opened',
             url: url,
             siteName: siteName,
-            note: opened ? 'Website opened in new tab' : 'Popup blocked; notify user with visual notification',
+            note: 'Open request was sent to the browser. The browser does not report whether the tab appeared.',
           };
         } catch (err: any) {
           result = { status: 'error', error: err.message, url: url };
