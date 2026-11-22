@@ -27,6 +27,7 @@ import {
   Delete as BackspaceIcon,
   RotateCcw,
   Check,
+  Download,
 } from 'lucide-react';
 
 export interface MemoryItem {
@@ -101,6 +102,7 @@ export const PermanentMemoryModal: React.FC<PermanentMemoryModalProps> = ({
   const [isLoadingMemories, setIsLoadingMemories] = useState(false);
   const [isSavingMemory, setIsSavingMemory] = useState(false);
   const [memoryError, setMemoryError] = useState<string | null>(null);
+  const [backupStatus, setBackupStatus] = useState<'idle' | 'working' | 'done' | 'failed'>('idle');
 
   const [isAdding, setIsAdding] = useState(false);
   const [newContent, setNewContent] = useState('');
@@ -393,6 +395,58 @@ export const PermanentMemoryModal: React.FC<PermanentMemoryModalProps> = ({
     } catch (err: any) {
       setMemoryError(err?.message || 'Network error saving memory');
       setIsSavingMemory(false);
+    }
+  };
+
+  const handleBackupMemories = async () => {
+    if (securityStatus?.isLocked || backupStatus === 'working') return;
+    setBackupStatus('working');
+    try {
+      const res = await fetch('/api/memories');
+      const data = await res.json();
+      if (!res.ok || !data?.success || !Array.isArray(data.memories)) {
+        setBackupStatus('failed');
+        setTimeout(() => setBackupStatus('idle'), 2500);
+        return;
+      }
+
+      const now = new Date();
+      const backupObj = {
+        app: 'Mahiru',
+        exportedAt: now.toISOString(),
+        count: data.memories.length,
+        memories: data.memories,
+      };
+      const jsonText = JSON.stringify(backupObj, null, 2);
+
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const fileName = `mahiru-memory-backup-${year}-${month}-${day}.json`;
+
+      const blob = new Blob([jsonText], { type: 'application/json' });
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(objectUrl);
+
+      try {
+        if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(jsonText);
+        }
+      } catch {
+        // Ignore clipboard errors silently
+      }
+
+      setBackupStatus('done');
+      setTimeout(() => setBackupStatus('idle'), 2500);
+    } catch {
+      setBackupStatus('failed');
+      setTimeout(() => setBackupStatus('idle'), 2500);
     }
   };
 
@@ -869,6 +923,29 @@ export const PermanentMemoryModal: React.FC<PermanentMemoryModalProps> = ({
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>{isAdding ? 'CANCEL' : '+ ADD MEMORY'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={Boolean(securityStatus?.isLocked) || backupStatus === 'working'}
+                  onClick={handleBackupMemories}
+                  className={
+                    securityStatus?.isLocked
+                      ? 'px-3.5 py-1.5 rounded-xl border border-[#2e1d28] bg-[#170e16] text-[#71717a] font-mono text-[11px] sm:text-xs font-bold tracking-wider uppercase flex items-center gap-1.5 cursor-not-allowed opacity-60 select-none transition-colors'
+                      : 'px-3.5 py-1.5 rounded-xl border border-[#312e81] bg-[#14112e] hover:bg-[#1e1b4b] text-[#a5b4fc] font-mono text-[11px] sm:text-xs font-bold tracking-wider uppercase flex items-center gap-1.5 transition-colors shadow-sm shadow-[#312e81]/40'
+                  }
+                  title="Download all permanent memories as JSON backup"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>
+                    {backupStatus === 'working'
+                      ? '...'
+                      : backupStatus === 'done'
+                        ? 'SAVED'
+                        : backupStatus === 'failed'
+                          ? 'FAILED'
+                          : 'BACKUP'}
+                  </span>
                 </button>
               </div>
             </div>
